@@ -1,0 +1,14 @@
+File manager service.
+Multi tenant
+Java, Spring boot latest
+Usable both as library and service
+File storage should be swappable.
+Swagger doc with documentation
+Documentation for library use.
+Api key authentication
+File secure and non secure access
+Full file management service like google drive(so the structure should be such so that it can be extended)
+Maven multi modal design
+Full unit test
+Integration test.
+Deep module with clean interface.
