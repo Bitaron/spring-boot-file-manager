@@ -26,3 +26,9 @@ Maven (multi-module reactor build).
 - [Testing](docs/testing.md) — unit and integration test expectations.
 - [Git workflow](docs/git-workflow.md)
 
+## Agent skills
+
+### Issue tracker
+
+Issues live in this repo's GitHub Issues (`Bitaron/spring-boot-file-manager`), via the `gh` CLI. See [docs/agents/issue-tracker.md](docs/agents/issue-tracker.md) — also the entry point for resuming the active `/wayfinder` map ("File Manager Spec", issue #1).
+
