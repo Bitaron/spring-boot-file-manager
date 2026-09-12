@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>io.github.bitaron</groupId>
+        <artifactId>file-manager-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>file-manager-core</artifactId>
+    <packaging>jar</packaging>
+
+    <name>File Manager - Core</name>
+    <description>
+        Domain model and engine: Tenant, Folder, File, Visibility, AccessToken, Trash.
+        No Spring Web or transport dependency, so it stays usable from both Embedded Mode
+        and the Standalone Service's controllers (see docs/java-conventions.md).
+    </description>
+</project>

@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>io.github.bitaron</groupId>
+        <artifactId>file-manager-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>file-manager-spring-boot-starter</artifactId>
+    <packaging>jar</packaging>
+
+    <name>File Manager - Spring Boot Starter</name>
+    <description>
+        The single dependency a host application adds to embed file-manager in Embedded Mode.
+        Aggregates file-manager-spring-boot-autoconfigure plus the base Spring Boot starter; the
+        host additionally adds whichever file-manager-storage-* module it wants on its classpath.
+    </description>
+
+    <dependencies>
+        <dependency>
+            <groupId>io.github.bitaron</groupId>
+            <artifactId>file-manager-spring-boot-autoconfigure</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>
