@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>io.github.bitaron</groupId>
+        <artifactId>file-manager-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>file-manager-test-support</artifactId>
+    <packaging>jar</packaging>
+
+    <name>File Manager - Test Support</name>
+    <description>
+        Shared fixtures/builders for unit and integration tests, including the StorageBackend
+        contract-test suite run against every backend implementation. JUnit/AssertJ are declared
+        at compile scope here (unlike every other module's test scope) so a module that adds this
+        as a test dependency gets them transitively.
+    </description>
+
+    <dependencies>
+        <dependency>
+            <groupId>io.github.bitaron</groupId>
+            <artifactId>file-manager-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.github.bitaron</groupId>
+            <artifactId>file-manager-storage-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>compile</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>compile</scope>
+        </dependency>
+    </dependencies>
+</project>

@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>io.github.bitaron</groupId>
+        <artifactId>file-manager-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>file-manager-spring-boot-autoconfigure</artifactId>
+    <packaging>jar</packaging>
+
+    <name>File Manager - Spring Boot Autoconfigure</name>
+    <description>
+        Embedded Mode wiring: runs file-manager-core in-process inside a host application,
+        reusing the host's own DataSource and a configured StorageBackend. Never compiles against
+        a concrete backend - each storage module ships its own @AutoConfiguration.
+    </description>
+
+    <dependencies>
+        <dependency>
+            <groupId>io.github.bitaron</groupId>
+            <artifactId>file-manager-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.github.bitaron</groupId>
+            <artifactId>file-manager-storage-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-autoconfigure</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-configuration-processor</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>

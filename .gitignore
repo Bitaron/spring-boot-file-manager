@@ -1,1 +1,11 @@
 .claude/worktrees/
+
+# Maven
+target/
+*.log
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
