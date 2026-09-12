@@ -121,6 +121,18 @@
                     <configuration>
                         <release>${maven.compiler.release}</release>
                         <parameters>true</parameters>
+                        <!--
+                            JDK 23+ no longer auto-discovers annotation processors from the
+                            compile classpath (JDK-8306819); Lombok must be listed explicitly or
+                            its @Getter/@NoArgsConstructor et al. silently stop generating code.
+                        -->
+                        <annotationProcessorPaths>
+                            <path>
+                                <groupId>org.projectlombok</groupId>
+                                <artifactId>lombok</artifactId>
+                                <version>${lombok.version}</version>
+                            </path>
+                        </annotationProcessorPaths>
                     </configuration>
                 </plugin>
                 <plugin>

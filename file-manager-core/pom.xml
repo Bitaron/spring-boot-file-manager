@@ -19,4 +19,32 @@
         No Spring Web or transport dependency, so it stays usable from both Embedded Mode
         and the Standalone Service's controllers (see docs/java-conventions.md).
     </description>
+
+    <dependencies>
+        <!--
+            JPA annotations only (@Entity, @Id, ...) - entities are mapped so they fold into a
+            host's entity scan, but core talks to a plain EntityManager via hand-written
+            JPQL/Criteria DAOs, never Spring Data JPA repositories (decision #17).
+        -->
+        <dependency>
+            <groupId>jakarta.persistence</groupId>
+            <artifactId>jakarta.persistence-api</artifactId>
+        </dependency>
+
+        <!--
+            Test-only JPA provider + in-memory database: core's own DAO tests need a real
+            EntityManager to prove the indexed key_hash lookup works, without pulling in a
+            Spring context (docs/testing.md) or pinning a production database engine.
+        -->
+        <dependency>
+            <groupId>org.hibernate.orm</groupId>
+            <artifactId>hibernate-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
 </project>
