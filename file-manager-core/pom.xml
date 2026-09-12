@@ -19,4 +19,25 @@
         No Spring Web or transport dependency, so it stays usable from both Embedded Mode
         and the Standalone Service's controllers (see docs/java-conventions.md).
     </description>
+
+    <dependencies>
+        <!--
+            file-manager-core's persistence seam is a plain EntityManager (decision #17 - no
+            Spring Data JPA repository): entities live in main and are annotated with
+            jakarta.persistence + Hibernate's own annotations (e.g. @UuidGenerator for UUIDv7
+            ids), so hibernate-core is a compile-scope dependency here, not test-only. It is
+            exercised in domain-rule tests with no Spring context (docs/testing.md) against an
+            in-memory H2 database. Versions come from the imported spring-boot-dependencies BOM
+            (see parent pom) rather than being pinned here.
+        -->
+        <dependency>
+            <groupId>org.hibernate.orm</groupId>
+            <artifactId>hibernate-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
 </project>
