@@ -2,6 +2,7 @@ package io.github.bitaron.filemanager.core.folder;
 
 import java.util.UUID;
 
+import io.github.bitaron.filemanager.core.tenant.TenantId;
 import jakarta.persistence.EntityManager;
 
 /**
@@ -27,9 +28,9 @@ class FolderDao {
      * Tenant is treated as not found (every cross-Tenant lookup must be Tenant-scoped, per
      * docs/java-conventions.md).
      */
-    Folder findByIdForTenant(UUID id, UUID tenantId) {
+    Folder findByIdForTenant(UUID id, TenantId tenantId) {
         Folder folder = entityManager.find(Folder.class, id);
-        if (folder == null || !folder.getTenantId().equals(tenantId)) {
+        if (folder == null || !folder.tenantId().equals(tenantId)) {
             return null;
         }
         return folder;

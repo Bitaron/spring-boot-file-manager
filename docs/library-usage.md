@@ -20,11 +20,11 @@ Given that `DataSource`, the autoconfiguration:
 `FolderService` is a granular, per-aggregate service (see the "Embedded Mode integration shape" decision referenced from `docs/architecture.md`) — call it directly, no HTTP layer involved:
 
 ```java
-folderService.create(tenantId, actorId, "Quarterly Reports", null);       // top-level Folder
-folderService.create(tenantId, actorId, "2026 Q1", parentFolder.getId()); // nested Folder
+folderService.create(tenantId, actor, "Quarterly Reports", null);       // top-level Folder
+folderService.create(tenantId, actor, "2026 Q1", parentFolder.getId()); // nested Folder
 ```
 
-`tenantId` and `actorId` are always passed explicitly (never inferred from thread-local/security-context state), so `FolderService` works the same whether it's called from a web request or a background job with no HTTP request in flight.
+`tenantId` (a `TenantId`) and `actor` (an `Actor`) are always passed explicitly (never inferred from thread-local/security-context state), so `FolderService` works the same whether it's called from a web request or a background job with no HTTP request in flight.
 
 `FolderService` never opens its own transaction — the caller (your application code, typically via `@Transactional`) owns the transaction boundary, the same way it would around any other JPA-backed call.
 
@@ -34,8 +34,8 @@ Wrap calls to `FolderService` in your own `@Transactional` boundary (or an exist
 
 ```java
 @Transactional
-public void createQuarterFolder(UUID tenantId, UUID actorId) {
-    folderService.create(tenantId, actorId, "2026 Q1", null);
+public void createQuarterFolder(TenantId tenantId, Actor actor) {
+    folderService.create(tenantId, actor, "2026 Q1", null);
 }
 ```
 

@@ -22,17 +22,25 @@
 
     <dependencies>
         <!--
-            file-manager-core's persistence seam is a plain EntityManager (decision #17 - no
-            Spring Data JPA repository): entities live in main and are annotated with
-            jakarta.persistence + Hibernate's own annotations (e.g. @UuidGenerator for UUIDv7
-            ids), so hibernate-core is a compile-scope dependency here, not test-only. It is
-            exercised in domain-rule tests with no Spring context (docs/testing.md) against an
-            in-memory H2 database. Versions come from the imported spring-boot-dependencies BOM
-            (see parent pom) rather than being pinned here.
+            JPA annotations only (@Entity, @Id, ...) - entities are mapped so they fold into a
+            host's entity scan, but core talks to a plain EntityManager via hand-written
+            JPQL/Criteria DAOs, never Spring Data JPA repositories (decision #17).
+        -->
+        <dependency>
+            <groupId>jakarta.persistence</groupId>
+            <artifactId>jakarta.persistence-api</artifactId>
+        </dependency>
+
+        <!--
+            Test-only JPA provider + in-memory database: core's own DAO tests need a real
+            EntityManager to prove indexed lookups (e.g. ApiKey's key_hash, Folder's
+            tenant_id/parent_folder_id) work, without pulling in a Spring context
+            (docs/testing.md) or pinning a production database engine.
         -->
         <dependency>
             <groupId>org.hibernate.orm</groupId>
             <artifactId>hibernate-core</artifactId>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>com.h2database</groupId>

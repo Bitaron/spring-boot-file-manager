@@ -2,10 +2,14 @@ package io.github.bitaron.filemanager.core.folder;
 
 import java.util.UUID;
 
+import io.github.bitaron.filemanager.core.Actor;
+import io.github.bitaron.filemanager.core.jpa.TestEntityManagerFactory;
+import io.github.bitaron.filemanager.core.tenant.TenantId;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
-import jakarta.persistence.Persistence;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -19,30 +23,39 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 class FolderServiceTest {
 
-    private EntityManagerFactory entityManagerFactory;
+    private static EntityManagerFactory entityManagerFactory;
+
     private EntityManager entityManager;
     private FolderService folderService;
 
+    @BeforeAll
+    static void openFactory() {
+        entityManagerFactory = TestEntityManagerFactory.create();
+    }
+
+    @AfterAll
+    static void closeFactory() {
+        entityManagerFactory.close();
+    }
+
     @BeforeEach
-    void setUp() {
-        entityManagerFactory = Persistence.createEntityManagerFactory("file-manager-core-test");
+    void openEntityManager() {
         entityManager = entityManagerFactory.createEntityManager();
         folderService = new FolderService(entityManager);
     }
 
     @AfterEach
-    void tearDown() {
+    void closeEntityManager() {
         entityManager.close();
-        entityManagerFactory.close();
     }
 
     @Test
     void createsTopLevelFolderWithNoParent() {
-        UUID tenantId = UUID.randomUUID();
-        UUID actorId = UUID.randomUUID();
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
 
         entityManager.getTransaction().begin();
-        Folder created = folderService.create(tenantId, actorId, "Quarterly Reports", null);
+        Folder created = folderService.create(tenantId, actor, "Quarterly Reports", null);
         entityManager.getTransaction().commit();
 
         // Clear the persistence context so the lookup below hits the database rather than
@@ -52,18 +65,18 @@ class FolderServiceTest {
 
         assertThat(reloaded).isNotNull();
         assertThat(reloaded.getParentFolderId()).isNull();
-        assertThat(reloaded.getTenantId()).isEqualTo(tenantId);
+        assertThat(reloaded.tenantId()).isEqualTo(tenantId);
         assertThat(reloaded.getName()).isEqualTo("Quarterly Reports");
     }
 
     @Test
     void createsNestedFolderWithParentReference() {
-        UUID tenantId = UUID.randomUUID();
-        UUID actorId = UUID.randomUUID();
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
 
         entityManager.getTransaction().begin();
-        Folder parent = folderService.create(tenantId, actorId, "Quarterly Reports", null);
-        Folder child = folderService.create(tenantId, actorId, "2026 Q1", parent.getId());
+        Folder parent = folderService.create(tenantId, actor, "Quarterly Reports", null);
+        Folder child = folderService.create(tenantId, actor, "2026 Q1", parent.getId());
         entityManager.getTransaction().commit();
 
         entityManager.clear();
@@ -75,12 +88,12 @@ class FolderServiceTest {
 
     @Test
     void allowsSiblingFoldersWithSameName() {
-        UUID tenantId = UUID.randomUUID();
-        UUID actorId = UUID.randomUUID();
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
 
         entityManager.getTransaction().begin();
-        Folder first = folderService.create(tenantId, actorId, "Invoices", null);
-        Folder second = folderService.create(tenantId, actorId, "Invoices", null);
+        Folder first = folderService.create(tenantId, actor, "Invoices", null);
+        Folder second = folderService.create(tenantId, actor, "Invoices", null);
         entityManager.getTransaction().commit();
 
         entityManager.clear();
@@ -96,13 +109,13 @@ class FolderServiceTest {
 
     @Test
     void rejectsCreateWithNonexistentParent() {
-        UUID tenantId = UUID.randomUUID();
-        UUID actorId = UUID.randomUUID();
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
         UUID nonexistentParentId = UUID.randomUUID();
 
         entityManager.getTransaction().begin();
         try {
-            assertThatThrownBy(() -> folderService.create(tenantId, actorId, "Orphan", nonexistentParentId))
+            assertThatThrownBy(() -> folderService.create(tenantId, actor, "Orphan", nonexistentParentId))
                     .isInstanceOf(IllegalArgumentException.class);
         } finally {
             entityManager.getTransaction().rollback();
@@ -111,12 +124,12 @@ class FolderServiceTest {
 
     @Test
     void rejectsCreateWithBlankName() {
-        UUID tenantId = UUID.randomUUID();
-        UUID actorId = UUID.randomUUID();
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
 
         entityManager.getTransaction().begin();
         try {
-            assertThatThrownBy(() -> folderService.create(tenantId, actorId, "  ", null))
+            assertThatThrownBy(() -> folderService.create(tenantId, actor, "  ", null))
                     .isInstanceOf(IllegalArgumentException.class);
         } finally {
             entityManager.getTransaction().rollback();
@@ -125,12 +138,12 @@ class FolderServiceTest {
 
     @Test
     void rejectsCreateWithNullName() {
-        UUID tenantId = UUID.randomUUID();
-        UUID actorId = UUID.randomUUID();
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
 
         entityManager.getTransaction().begin();
         try {
-            assertThatThrownBy(() -> folderService.create(tenantId, actorId, null, null))
+            assertThatThrownBy(() -> folderService.create(tenantId, actor, null, null))
                     .isInstanceOf(IllegalArgumentException.class);
         } finally {
             entityManager.getTransaction().rollback();
@@ -139,11 +152,11 @@ class FolderServiceTest {
 
     @Test
     void rejectsCreateWithNullTenantId() {
-        UUID actorId = UUID.randomUUID();
+        Actor actor = new Actor(UUID.randomUUID());
 
         entityManager.getTransaction().begin();
         try {
-            assertThatThrownBy(() -> folderService.create(null, actorId, "Orphan", null))
+            assertThatThrownBy(() -> folderService.create(null, actor, "Orphan", null))
                     .isInstanceOf(IllegalArgumentException.class);
         } finally {
             entityManager.getTransaction().rollback();
@@ -151,8 +164,8 @@ class FolderServiceTest {
     }
 
     @Test
-    void rejectsCreateWithNullActorId() {
-        UUID tenantId = UUID.randomUUID();
+    void rejectsCreateWithNullActor() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
 
         entityManager.getTransaction().begin();
         try {

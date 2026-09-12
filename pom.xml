@@ -122,15 +122,14 @@
                         <release>${maven.compiler.release}</release>
                         <parameters>true</parameters>
                         <!--
-                            Every annotation processor a module needs must be listed explicitly here.
-                            Relying on implicit classpath-based processor discovery silently skips
-                            processors (Lombok included) under this JDK/compiler-plugin combination -
-                            no warning, no error, just unprocessed annotations (see
-                            docs/java-conventions.md). This is why spring-boot-configuration-processor
-                            (declared as a dependency in file-manager-spring-boot-autoconfigure) is
-                            listed here too, not just Lombok - once one processor path is set
-                            explicitly, implicit discovery stops entirely, so every processor needs a
-                            path or it silently never runs. Harmless for modules with no
+                            JDK 23+ no longer auto-discovers annotation processors from the compile
+                            classpath (JDK-8306819); every processor a module needs must be listed
+                            explicitly here or it silently stops running (e.g. Lombok's
+                            @Getter/@NoArgsConstructor et al. stop generating code) - once one
+                            processor path is set explicitly, implicit discovery stops entirely for
+                            all of them. This is why spring-boot-configuration-processor (declared as
+                            a dependency in file-manager-spring-boot-autoconfigure) is listed here
+                            too, not just Lombok. Harmless for modules with no
                             @ConfigurationProperties classes to process.
                         -->
                         <annotationProcessorPathsUseDepMgmt>true</annotationProcessorPathsUseDepMgmt>

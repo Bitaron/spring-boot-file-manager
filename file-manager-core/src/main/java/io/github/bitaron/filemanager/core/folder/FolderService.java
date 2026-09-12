@@ -3,6 +3,8 @@ package io.github.bitaron.filemanager.core.folder;
 import java.time.Instant;
 import java.util.UUID;
 
+import io.github.bitaron.filemanager.core.Actor;
+import io.github.bitaron.filemanager.core.tenant.TenantId;
 import jakarta.persistence.EntityManager;
 
 /**
@@ -20,20 +22,20 @@ public class FolderService {
     }
 
     /**
-     * Creates a new Folder for the given Tenant, owned by {@code actorId}.
+     * Creates a new Folder for the given Tenant, owned by {@code actor}.
      *
      * @param parentFolderId the parent Folder's id, or {@code null} to create a top-level Folder
-     * @throws IllegalArgumentException if {@code tenantId}, {@code actorId}, or {@code name} is
+     * @throws IllegalArgumentException if {@code tenantId}, {@code actor}, or {@code name} is
      *     missing/blank, or if {@code parentFolderId} is non-null and no Folder with that id
      *     exists for this Tenant - callers get a clean, catchable rejection instead of a raw
      *     persistence-provider exception surfacing at commit time
      */
-    public Folder create(UUID tenantId, UUID actorId, String name, UUID parentFolderId) {
+    public Folder create(TenantId tenantId, Actor actor, String name, UUID parentFolderId) {
         if (tenantId == null) {
             throw new IllegalArgumentException("tenantId must not be null");
         }
-        if (actorId == null) {
-            throw new IllegalArgumentException("actorId must not be null");
+        if (actor == null) {
+            throw new IllegalArgumentException("actor must not be null");
         }
         if (name == null || name.isBlank()) {
             throw new IllegalArgumentException("name must not be null or blank");
@@ -42,7 +44,7 @@ public class FolderService {
             throw new IllegalArgumentException(
                     "No Folder with id " + parentFolderId + " exists for this Tenant");
         }
-        Folder folder = new Folder(tenantId, parentFolderId, name, actorId, Instant.now());
+        Folder folder = new Folder(tenantId, parentFolderId, name, actor, Instant.now());
         return folderDao.save(folder);
     }
 }

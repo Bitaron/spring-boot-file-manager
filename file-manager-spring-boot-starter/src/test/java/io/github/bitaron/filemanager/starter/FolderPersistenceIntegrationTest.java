@@ -4,8 +4,10 @@ import java.util.UUID;
 
 import javax.sql.DataSource;
 
+import io.github.bitaron.filemanager.core.Actor;
 import io.github.bitaron.filemanager.core.folder.Folder;
 import io.github.bitaron.filemanager.core.folder.FolderService;
+import io.github.bitaron.filemanager.core.tenant.TenantId;
 import jakarta.persistence.EntityManager;
 import org.h2.jdbcx.JdbcDataSource;
 import org.junit.jupiter.api.Test;
@@ -45,10 +47,10 @@ class FolderPersistenceIntegrationTest {
 
     @Test
     void createsTopLevelFolderAndPersistsItAgainstTheHostDataSource() {
-        UUID tenantId = UUID.randomUUID();
-        UUID actorId = UUID.randomUUID();
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
 
-        Folder created = folderService.create(tenantId, actorId, "Quarterly Reports", null);
+        Folder created = folderService.create(tenantId, actor, "Quarterly Reports", null);
 
         // Flush and clear the persistence context so the lookup below hits the database rather
         // than returning the same managed instance still cached in memory.
@@ -58,17 +60,17 @@ class FolderPersistenceIntegrationTest {
 
         assertThat(reloaded).isNotNull();
         assertThat(reloaded.getParentFolderId()).isNull();
-        assertThat(reloaded.getTenantId()).isEqualTo(tenantId);
+        assertThat(reloaded.tenantId()).isEqualTo(tenantId);
         assertThat(reloaded.getName()).isEqualTo("Quarterly Reports");
     }
 
     @Test
     void createsNestedFolderWithParentReferenceAgainstTheHostDataSource() {
-        UUID tenantId = UUID.randomUUID();
-        UUID actorId = UUID.randomUUID();
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
 
-        Folder parent = folderService.create(tenantId, actorId, "Quarterly Reports", null);
-        Folder child = folderService.create(tenantId, actorId, "2026 Q1", parent.getId());
+        Folder parent = folderService.create(tenantId, actor, "Quarterly Reports", null);
+        Folder child = folderService.create(tenantId, actor, "2026 Q1", parent.getId());
 
         entityManager.flush();
         entityManager.clear();
