@@ -15,6 +15,7 @@ Every Standalone Service endpoint is authenticated by an `ApiKey`, scoped to exa
 - Document every endpoint with Swagger/OpenAPI (springdoc-openapi) — this is a v1 requirement, not optional polish.
 - Version the API path (e.g. `/api/v1/...`) so the REST surface can evolve independently of `file-manager-core`'s Java API.
 - Controllers translate HTTP concerns (status codes, pagination params) onto `file-manager-core` service calls; validation of request shape belongs in the controller layer, domain rule validation belongs in core.
+- Full route table, DTO shapes, pagination, error-response, and HTTP status-code conventions (including the deliberately non-standard `404`-not-`403`/`410` handling that preserves non-enumerability): see [ADR 0004](adr/0004-rest-api-resource-design.md).
 
 ## Library API (Embedded Mode)
 
