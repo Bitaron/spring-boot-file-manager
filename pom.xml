@@ -122,15 +122,26 @@
                         <release>${maven.compiler.release}</release>
                         <parameters>true</parameters>
                         <!--
-                            JDK 23+ no longer auto-discovers annotation processors from the
-                            compile classpath (JDK-8306819); Lombok must be listed explicitly or
-                            its @Getter/@NoArgsConstructor et al. silently stop generating code.
+                            JDK 23+ no longer auto-discovers annotation processors from the compile
+                            classpath (JDK-8306819); every processor a module needs must be listed
+                            explicitly here or it silently stops running (e.g. Lombok's
+                            @Getter/@NoArgsConstructor et al. stop generating code) - once one
+                            processor path is set explicitly, implicit discovery stops entirely for
+                            all of them. This is why spring-boot-configuration-processor (declared as
+                            a dependency in file-manager-spring-boot-autoconfigure) is listed here
+                            too, not just Lombok. Harmless for modules with no
+                            @ConfigurationProperties classes to process.
                         -->
+                        <annotationProcessorPathsUseDepMgmt>true</annotationProcessorPathsUseDepMgmt>
                         <annotationProcessorPaths>
                             <path>
                                 <groupId>org.projectlombok</groupId>
                                 <artifactId>lombok</artifactId>
                                 <version>${lombok.version}</version>
+                            </path>
+                            <path>
+                                <groupId>org.springframework.boot</groupId>
+                                <artifactId>spring-boot-configuration-processor</artifactId>
                             </path>
                         </annotationProcessorPaths>
                     </configuration>

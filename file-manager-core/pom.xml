@@ -33,8 +33,9 @@
 
         <!--
             Test-only JPA provider + in-memory database: core's own DAO tests need a real
-            EntityManager to prove the indexed key_hash lookup works, without pulling in a
-            Spring context (docs/testing.md) or pinning a production database engine.
+            EntityManager to prove indexed lookups (e.g. ApiKey's key_hash, Folder's
+            tenant_id/parent_folder_id) work, without pulling in a Spring context
+            (docs/testing.md) or pinning a production database engine.
         -->
         <dependency>
             <groupId>org.hibernate.orm</groupId>

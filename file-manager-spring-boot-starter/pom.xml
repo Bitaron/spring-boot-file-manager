@@ -34,5 +34,16 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <!--
+            Test-only: backs the Embedded Mode integration test's own DataSource bean (a plain
+            in-memory H2 database supplied by the test, per docs/testing.md's "boots the Spring
+            Boot starter in a plain application context" rule) - not a dependency the autoconfigure
+            module needs at compile time.
+        -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 </project>

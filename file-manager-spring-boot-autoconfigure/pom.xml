@@ -33,6 +33,16 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-autoconfigure</artifactId>
         </dependency>
+        <!--
+            Brings Hibernate + Spring ORM + Spring Boot's own JPA/Hibernate autoconfiguration
+            (and spring-tx transitively) so a host application's plain DataSource bean is enough
+            for Spring Boot to build a working EntityManagerFactory - Folder persistence rides on
+            that instead of file-manager-core standing up its own persistence unit.
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-configuration-processor</artifactId>

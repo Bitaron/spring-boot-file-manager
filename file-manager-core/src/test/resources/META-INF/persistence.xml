@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
     Test-only persistence unit: a plain JPA bootstrap (Hibernate + in-memory H2), no Spring
-    context, proving core's entities and hand-written JPQL DAOs work against a real EntityManager
-    (docs/testing.md). Production wiring builds an EntityManager from the host's own
-    EntityManagerFactory instead (decision #17); this unit exists for file-manager-core's own
+    context, proving core's entities and hand-written JPQL/Criteria DAOs work against a real
+    EntityManager (docs/testing.md). Production wiring builds an EntityManager from the host's
+    own EntityManagerFactory instead (decision #17); this unit exists for file-manager-core's own
     tests only and is never packaged for consumers.
 -->
 <persistence xmlns="https://jakarta.ee/xml/ns/persistence"
@@ -16,6 +16,7 @@
 
         <class>io.github.bitaron.filemanager.core.tenant.Tenant</class>
         <class>io.github.bitaron.filemanager.core.apikey.ApiKey</class>
+        <class>io.github.bitaron.filemanager.core.folder.Folder</class>
 
         <exclude-unlisted-classes>true</exclude-unlisted-classes>
 
