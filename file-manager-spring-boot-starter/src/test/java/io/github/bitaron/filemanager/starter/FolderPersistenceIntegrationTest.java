@@ -1,5 +1,6 @@
 package io.github.bitaron.filemanager.starter;
 
+import java.util.List;
 import java.util.UUID;
 
 import javax.sql.DataSource;
@@ -78,6 +79,28 @@ class FolderPersistenceIntegrationTest {
 
         assertThat(reloadedChild).isNotNull();
         assertThat(reloadedChild.getParentFolderId()).isEqualTo(parent.getId());
+    }
+
+    @Test
+    void fetchesAndListsFoldersAgainstTheHostDataSource() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+
+        Folder parent = folderService.create(tenantId, actor, "Quarterly Reports", null);
+        Folder child = folderService.create(tenantId, actor, "2026 Q1", parent.getId());
+
+        entityManager.flush();
+        entityManager.clear();
+
+        Folder fetched = folderService.fetch(tenantId, parent.getId());
+        assertThat(fetched).isNotNull();
+        assertThat(fetched.getName()).isEqualTo("Quarterly Reports");
+
+        List<Folder> children = folderService.listChildren(tenantId, parent.getId());
+        assertThat(children).extracting(Folder::getId).containsExactly(child.getId());
+
+        List<Folder> topLevel = folderService.listChildren(tenantId, null);
+        assertThat(topLevel).extracting(Folder::getId).containsExactly(parent.getId());
     }
 
     /**
