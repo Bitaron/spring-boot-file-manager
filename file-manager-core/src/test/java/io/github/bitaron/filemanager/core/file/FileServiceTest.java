@@ -166,6 +166,66 @@ class FileServiceTest {
                 .isInstanceOf(FileNotFoundException.class);
     }
 
+    /**
+     * The Secure Access Visibility gate (issue #36, the piece PR #60/issue #33 explicitly
+     * deferred): {@code CONTEXT.md} - "a Public File is never fetched via a Secure Access call".
+     */
+    @Test
+    void fetchContentThrowsFileNotFoundExceptionWhenFileIsPublic() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+        File existing = new File(UUID.randomUUID(), tenantId, UUID.randomUUID(), "invoice.pdf", 11, "application/pdf",
+                Visibility.PUBLIC, "some/reference", actor, Instant.now());
+
+        FakeFileLookup fileLookup = new FakeFileLookup();
+        fileLookup.byId.put(existing.getId(), existing);
+        // Preloaded so that - absent the gate under test - fetchContent would otherwise succeed
+        // and return real content; this keeps the failure unambiguous ("expected a throwable but
+        // got a FileContent"), not an incidental fake-storage AssertionError.
+        FakeStorageBackend storageBackend = new FakeStorageBackend();
+        storageBackend.retrievable.put("some/reference", "hello world".getBytes(StandardCharsets.UTF_8));
+        FileService fileService = new FileService(fileLookup, folderService, storageBackend);
+
+        assertThatThrownBy(() -> fileService.fetchContent(tenantId, existing.getId()))
+                .isInstanceOf(FileNotFoundException.class);
+    }
+
+    /**
+     * {@link FileService#fetchContentForNonSecureAccess} is the ungated seam reserved for
+     * AccessToken redemption (issue #36) - unlike {@link FileService#fetchContent}, it must return
+     * content for a {@code Public} File rather than rejecting it.
+     */
+    @Test
+    void fetchContentForNonSecureAccessReturnsFileAndContentStreamForAPublicFile() throws IOException {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+        File existing = new File(UUID.randomUUID(), tenantId, UUID.randomUUID(), "invoice.pdf", 11, "application/pdf",
+                Visibility.PUBLIC, "some/reference", actor, Instant.now());
+
+        FakeFileLookup fileLookup = new FakeFileLookup();
+        fileLookup.byId.put(existing.getId(), existing);
+        FakeStorageBackend storageBackend = new FakeStorageBackend();
+        byte[] bytes = "hello world".getBytes(StandardCharsets.UTF_8);
+        storageBackend.retrievable.put("some/reference", bytes);
+        FileService fileService = new FileService(fileLookup, folderService, storageBackend);
+
+        FileContent fileContent = fileService.fetchContentForNonSecureAccess(tenantId, existing.getId());
+
+        assertThat(fileContent.file()).isSameAs(existing);
+        assertThat(fileContent.content().readAllBytes()).isEqualTo(bytes);
+    }
+
+    @Test
+    void fetchContentForNonSecureAccessThrowsFileNotFoundExceptionWhenFileDoesNotResolveForTenant() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        FakeFileLookup fileLookup = new FakeFileLookup();
+        FileService fileService = new FileService(fileLookup, folderService, new FakeStorageBackend());
+        UUID fileId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> fileService.fetchContentForNonSecureAccess(tenantId, fileId))
+                .isInstanceOf(FileNotFoundException.class);
+    }
+
     /** Captures what it was asked to save, and answers lookups from a preloaded map. */
     private static final class FakeFileLookup implements FileLookup {
         private final Map<UUID, File> byId = new HashMap<>();
