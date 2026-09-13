@@ -119,7 +119,7 @@ class FolderServiceTest {
         entityManager.getTransaction().begin();
         try {
             assertThatThrownBy(() -> folderService.create(tenantId, actor, "Orphan", nonexistentParentId))
-                    .isInstanceOf(IllegalArgumentException.class);
+                    .isInstanceOf(FolderNotFoundException.class);
         } finally {
             entityManager.getTransaction().rollback();
         }
@@ -216,6 +216,54 @@ class FolderServiceTest {
                 .containsExactly("Someone Else's Folder");
     }
 
+    /**
+     * UUIDv7 only orders by millisecond timestamp (see {@code UuidV7}) - Folders created within
+     * the same millisecond have no guaranteed relative order, so these tests derive "the" id
+     * order from an unbounded page (the same {@code ORDER BY id ASC} query under test) instead of
+     * assuming creation order, to avoid flaking on a fast test run.
+     */
+    @Test
+    void pagedListChildrenReturnsAtMostLimitFoldersInIdOrder() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+
+        entityManager.getTransaction().begin();
+        folderService.create(tenantId, actor, "A", null);
+        folderService.create(tenantId, actor, "B", null);
+        folderService.create(tenantId, actor, "C", null);
+        entityManager.getTransaction().commit();
+
+        entityManager.clear();
+        List<Folder> idOrder = folderService.listChildren(tenantId, null, null, 50);
+        List<Folder> firstPage = folderService.listChildren(tenantId, null, null, 2);
+
+        assertThat(firstPage).extracting(Folder::getId)
+                .containsExactlyElementsOf(
+                        idOrder.stream().limit(2).map(Folder::getId).toList());
+    }
+
+    @Test
+    void pagedListChildrenResumesAfterTheGivenCursor() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+
+        entityManager.getTransaction().begin();
+        folderService.create(tenantId, actor, "A", null);
+        folderService.create(tenantId, actor, "B", null);
+        folderService.create(tenantId, actor, "C", null);
+        entityManager.getTransaction().commit();
+
+        entityManager.clear();
+        List<Folder> idOrder = folderService.listChildren(tenantId, null, null, 50);
+        UUID cursor = idOrder.get(0).getId();
+
+        List<Folder> nextPage = folderService.listChildren(tenantId, null, cursor, 50);
+
+        assertThat(nextPage).extracting(Folder::getId)
+                .containsExactlyElementsOf(
+                        idOrder.stream().skip(1).map(Folder::getId).toList());
+    }
+
     @Test
     void renamesFolderAndRecordsTheRenamingActor() {
         TenantId tenantId = new TenantId(UUID.randomUUID());
@@ -247,7 +295,7 @@ class FolderServiceTest {
         entityManager.getTransaction().begin();
         try {
             assertThatThrownBy(() -> folderService.rename(tenantId, actor, nonexistentFolderId, "New Name"))
-                    .isInstanceOf(IllegalArgumentException.class);
+                    .isInstanceOf(FolderNotFoundException.class);
         } finally {
             entityManager.getTransaction().rollback();
         }
@@ -266,7 +314,7 @@ class FolderServiceTest {
         entityManager.getTransaction().begin();
         try {
             assertThatThrownBy(() -> folderService.rename(otherTenantId, actor, created.getId(), "New Name"))
-                    .isInstanceOf(IllegalArgumentException.class);
+                    .isInstanceOf(FolderNotFoundException.class);
         } finally {
             entityManager.getTransaction().rollback();
         }
@@ -326,7 +374,7 @@ class FolderServiceTest {
         entityManager.getTransaction().begin();
         try {
             assertThatThrownBy(() -> folderService.move(tenantId, actor, folder.getId(), nonexistentParentId))
-                    .isInstanceOf(IllegalArgumentException.class);
+                    .isInstanceOf(FolderNotFoundException.class);
         } finally {
             entityManager.getTransaction().rollback();
         }
@@ -341,7 +389,7 @@ class FolderServiceTest {
         entityManager.getTransaction().begin();
         try {
             assertThatThrownBy(() -> folderService.move(tenantId, actor, nonexistentFolderId, null))
-                    .isInstanceOf(IllegalArgumentException.class);
+                    .isInstanceOf(FolderNotFoundException.class);
         } finally {
             entityManager.getTransaction().rollback();
         }
