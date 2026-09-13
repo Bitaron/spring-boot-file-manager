@@ -1,5 +1,6 @@
 package io.github.bitaron.filemanager.core.folder;
 
+import java.util.List;
 import java.util.UUID;
 
 import io.github.bitaron.filemanager.core.Actor;
@@ -122,5 +123,96 @@ class FolderServiceTest {
         } finally {
             entityManager.getTransaction().rollback();
         }
+    }
+
+    @Test
+    void fetchesSingleFolderMetadataById() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+
+        entityManager.getTransaction().begin();
+        Folder created = folderService.create(tenantId, actor, "Quarterly Reports", null);
+        entityManager.getTransaction().commit();
+
+        entityManager.clear();
+        Folder fetched = folderService.fetch(tenantId, created.getId());
+
+        assertThat(fetched).isNotNull();
+        assertThat(fetched.getId()).isEqualTo(created.getId());
+        assertThat(fetched.getName()).isEqualTo("Quarterly Reports");
+    }
+
+    @Test
+    void fetchReturnsNullWhenFolderBelongsToAnotherTenant() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        TenantId otherTenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+
+        entityManager.getTransaction().begin();
+        Folder created = folderService.create(tenantId, actor, "Quarterly Reports", null);
+        entityManager.getTransaction().commit();
+
+        entityManager.clear();
+        Folder fetched = folderService.fetch(otherTenantId, created.getId());
+
+        assertThat(fetched).isNull();
+    }
+
+    @Test
+    void listsImmediateChildrenOfAFolder() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+
+        entityManager.getTransaction().begin();
+        Folder parent = folderService.create(tenantId, actor, "Quarterly Reports", null);
+        Folder child1 = folderService.create(tenantId, actor, "2026 Q1", parent.getId());
+        Folder child2 = folderService.create(tenantId, actor, "2026 Q2", parent.getId());
+        // A top-level Folder, and another Tenant's child of the same parent id are noise this
+        // list must exclude.
+        folderService.create(tenantId, actor, "Unrelated Top-Level Folder", null);
+        entityManager.getTransaction().commit();
+
+        entityManager.clear();
+        List<Folder> children = folderService.listChildren(tenantId, parent.getId());
+
+        assertThat(children).extracting(Folder::getId)
+                .containsExactlyInAnyOrder(child1.getId(), child2.getId());
+    }
+
+    @Test
+    void listsTopLevelFoldersWhenParentIdOmitted() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+
+        entityManager.getTransaction().begin();
+        Folder topLevel1 = folderService.create(tenantId, actor, "Quarterly Reports", null);
+        Folder topLevel2 = folderService.create(tenantId, actor, "Invoices", null);
+        // A nested Folder is noise this top-level list must exclude.
+        folderService.create(tenantId, actor, "2026 Q1", topLevel1.getId());
+        entityManager.getTransaction().commit();
+
+        entityManager.clear();
+        List<Folder> children = folderService.listChildren(tenantId, null);
+
+        assertThat(children).extracting(Folder::getId)
+                .containsExactlyInAnyOrder(topLevel1.getId(), topLevel2.getId());
+    }
+
+    @Test
+    void listChildrenIsScopedToTenant() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        TenantId otherTenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+
+        entityManager.getTransaction().begin();
+        folderService.create(tenantId, actor, "Quarterly Reports", null);
+        folderService.create(otherTenantId, actor, "Someone Else's Folder", null);
+        entityManager.getTransaction().commit();
+
+        entityManager.clear();
+        List<Folder> otherTenantTopLevel = folderService.listChildren(otherTenantId, null);
+
+        assertThat(otherTenantTopLevel).extracting(Folder::getName)
+                .containsExactly("Someone Else's Folder");
     }
 }

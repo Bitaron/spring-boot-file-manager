@@ -22,6 +22,10 @@ Given that `DataSource`, the autoconfiguration:
 ```java
 folderService.create(tenantId, actor, "Quarterly Reports", null);       // top-level Folder
 folderService.create(tenantId, actor, "2026 Q1", parentFolder.getId()); // nested Folder
+
+folderService.fetch(tenantId, folderId);              // single Folder's metadata, or null if not found
+folderService.listChildren(tenantId, parentFolder.getId()); // a Folder's immediate children
+folderService.listChildren(tenantId, null);                 // top-level Folders
 ```
 
 `tenantId` (a `TenantId`) and `actor` (an `Actor`) are always passed explicitly (never inferred from thread-local/security-context state), so `FolderService` works the same whether it's called from a web request or a background job with no HTTP request in flight.

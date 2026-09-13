@@ -1,6 +1,7 @@
 package io.github.bitaron.filemanager.core.folder;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 import io.github.bitaron.filemanager.core.Actor;
@@ -52,5 +53,32 @@ public class FolderService {
         }
         Folder folder = new Folder(tenantId, parentFolderId, name, actor, Instant.now());
         return folderLookup.save(folder);
+    }
+
+    /**
+     * Fetches a single Folder's metadata by id, scoped to {@code tenantId}.
+     *
+     * @return the Folder, or {@code null} if no Folder with that id exists for this Tenant
+     */
+    public Folder fetch(TenantId tenantId, UUID folderId) {
+        if (tenantId == null) {
+            throw new IllegalArgumentException("tenantId must not be null");
+        }
+        if (folderId == null) {
+            throw new IllegalArgumentException("folderId must not be null");
+        }
+        return folderLookup.findByIdForTenant(folderId, tenantId);
+    }
+
+    /**
+     * Lists a Folder's immediate children, scoped to {@code tenantId}.
+     *
+     * @param parentFolderId the parent Folder's id, or {@code null} to list top-level Folders
+     */
+    public List<Folder> listChildren(TenantId tenantId, UUID parentFolderId) {
+        if (tenantId == null) {
+            throw new IllegalArgumentException("tenantId must not be null");
+        }
+        return folderLookup.findChildrenForTenant(parentFolderId, tenantId);
     }
 }

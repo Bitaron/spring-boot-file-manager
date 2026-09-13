@@ -1,5 +1,6 @@
 package io.github.bitaron.filemanager.core.folder;
 
+import java.util.List;
 import java.util.UUID;
 
 import io.github.bitaron.filemanager.core.Actor;
@@ -52,6 +53,28 @@ class FolderServiceValidationTest {
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
+    @Test
+    void rejectsFetchWithNullTenantId() {
+        UUID folderId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> folderService.fetch(null, folderId))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void rejectsFetchWithNullFolderId() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+
+        assertThatThrownBy(() -> folderService.fetch(tenantId, null))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void rejectsListChildrenWithNullTenantId() {
+        assertThatThrownBy(() -> folderService.listChildren(null, null))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
     /** Every guard clause above rejects before {@code create} would ever reach the DAO. */
     private static FolderLookup rejectingLookup() {
         return new FolderLookup() {
@@ -62,6 +85,11 @@ class FolderServiceValidationTest {
 
             @Override
             public Folder save(Folder folder) {
+                throw new AssertionError("A guard-clause rejection must never reach the DAO");
+            }
+
+            @Override
+            public List<Folder> findChildrenForTenant(UUID parentFolderId, TenantId tenantId) {
                 throw new AssertionError("A guard-clause rejection must never reach the DAO");
             }
         };
