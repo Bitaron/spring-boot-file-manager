@@ -27,6 +27,13 @@
              version (docs/java-conventions.md's "keep the BOM current" rule extended to the one
              dependency it doesn't manage). -->
         <springdoc-openapi.version>3.1.0</springdoc-openapi.version>
+        <!-- AWS SDK v2 - imported as its own BOM below (Spring Boot's BOM doesn't manage it), used
+             only by file-manager-storage-s3 so no other module's classpath is affected. -->
+        <aws-sdk.version>2.46.7</aws-sdk.version>
+        <!-- Not part of the Spring Boot BOM - pinned here (same rationale as springdoc-openapi
+             above) so the two org.testcontainers artifacts file-manager-storage-s3 uses resolve to
+             the same version. -->
+        <testcontainers.version>1.21.3</testcontainers.version>
     </properties>
 
     <modules>
@@ -48,6 +55,18 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-dependencies</artifactId>
                 <version>${spring-boot.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- AWS SDK v2 BOM - imported after spring-boot-dependencies so any dependency the two
+                 BOMs both manage (e.g. Jackson, Netty) keeps Spring Boot's version; this only fills
+                 in AWS-specific artifacts (e.g. software.amazon.awssdk:s3) that Spring's BOM doesn't
+                 cover. -->
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>bom</artifactId>
+                <version>${aws-sdk.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -98,6 +117,19 @@
                 <groupId>org.springdoc</groupId>
                 <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
                 <version>${springdoc-openapi.version}</version>
+            </dependency>
+
+            <!-- Declared directly (not via BOM import) so both testcontainers artifacts resolve to
+                 the same pinned version regardless of what any imported BOM manages. -->
+            <dependency>
+                <groupId>org.testcontainers</groupId>
+                <artifactId>junit-jupiter</artifactId>
+                <version>${testcontainers.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.testcontainers</groupId>
+                <artifactId>minio</artifactId>
+                <version>${testcontainers.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
