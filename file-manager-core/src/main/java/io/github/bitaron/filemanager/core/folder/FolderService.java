@@ -9,16 +9,22 @@ import jakarta.persistence.EntityManager;
 
 /**
  * Domain operations on {@link Folder} (create/move/trash - docs/architecture.md's "service
- * interfaces, not entity setters" rule). Delegates persistence mechanics to an internal
- * {@link FolderDao}, keeping this class free to grow business rules (e.g. the rename/move
- * validation planned for a later cycle) without also owning {@link EntityManager} plumbing.
+ * interfaces, not entity setters" rule). Delegates persistence mechanics to a {@link FolderLookup},
+ * keeping this class free to grow business rules (e.g. the rename/move validation planned for a
+ * later cycle) without also owning {@link EntityManager} plumbing, and letting its own
+ * guard-clause tests fake that seam out with no database (docs/testing.md), mirroring apikey's
+ * {@code ApiKeyResolver}/{@code ApiKeyLookup} seam.
  */
 public class FolderService {
 
-    private final FolderDao folderDao;
+    private final FolderLookup folderLookup;
 
     public FolderService(EntityManager entityManager) {
-        this.folderDao = new FolderDao(entityManager);
+        this(new FolderDao(entityManager));
+    }
+
+    FolderService(FolderLookup folderLookup) {
+        this.folderLookup = folderLookup;
     }
 
     /**
@@ -40,11 +46,11 @@ public class FolderService {
         if (name == null || name.isBlank()) {
             throw new IllegalArgumentException("name must not be null or blank");
         }
-        if (parentFolderId != null && folderDao.findByIdForTenant(parentFolderId, tenantId) == null) {
+        if (parentFolderId != null && folderLookup.findByIdForTenant(parentFolderId, tenantId) == null) {
             throw new IllegalArgumentException(
                     "No Folder with id " + parentFolderId + " exists for this Tenant");
         }
         Folder folder = new Folder(tenantId, parentFolderId, name, actor, Instant.now());
-        return folderDao.save(folder);
+        return folderLookup.save(folder);
     }
 }

@@ -17,9 +17,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Exercises {@link FolderService} directly against a real {@link EntityManager}/Hibernate,
- * backed by an in-memory H2 database - no Spring context involved (docs/testing.md: core's
- * domain rules are tested with no Spring context).
+ * Exercises {@link FolderService} behavior that genuinely needs persistence (create + reload,
+ * parent-existence lookup) against a real {@link EntityManager}/Hibernate, backed by an
+ * in-memory H2 database - no Spring context involved (docs/testing.md: core's domain rules are
+ * tested with no Spring context). Pure guard-clause validation lives in
+ * {@link FolderServiceValidationTest} instead, against a fake {@link FolderLookup}.
  */
 class FolderServiceTest {
 
@@ -116,60 +118,6 @@ class FolderServiceTest {
         entityManager.getTransaction().begin();
         try {
             assertThatThrownBy(() -> folderService.create(tenantId, actor, "Orphan", nonexistentParentId))
-                    .isInstanceOf(IllegalArgumentException.class);
-        } finally {
-            entityManager.getTransaction().rollback();
-        }
-    }
-
-    @Test
-    void rejectsCreateWithBlankName() {
-        TenantId tenantId = new TenantId(UUID.randomUUID());
-        Actor actor = new Actor(UUID.randomUUID());
-
-        entityManager.getTransaction().begin();
-        try {
-            assertThatThrownBy(() -> folderService.create(tenantId, actor, "  ", null))
-                    .isInstanceOf(IllegalArgumentException.class);
-        } finally {
-            entityManager.getTransaction().rollback();
-        }
-    }
-
-    @Test
-    void rejectsCreateWithNullName() {
-        TenantId tenantId = new TenantId(UUID.randomUUID());
-        Actor actor = new Actor(UUID.randomUUID());
-
-        entityManager.getTransaction().begin();
-        try {
-            assertThatThrownBy(() -> folderService.create(tenantId, actor, null, null))
-                    .isInstanceOf(IllegalArgumentException.class);
-        } finally {
-            entityManager.getTransaction().rollback();
-        }
-    }
-
-    @Test
-    void rejectsCreateWithNullTenantId() {
-        Actor actor = new Actor(UUID.randomUUID());
-
-        entityManager.getTransaction().begin();
-        try {
-            assertThatThrownBy(() -> folderService.create(null, actor, "Orphan", null))
-                    .isInstanceOf(IllegalArgumentException.class);
-        } finally {
-            entityManager.getTransaction().rollback();
-        }
-    }
-
-    @Test
-    void rejectsCreateWithNullActor() {
-        TenantId tenantId = new TenantId(UUID.randomUUID());
-
-        entityManager.getTransaction().begin();
-        try {
-            assertThatThrownBy(() -> folderService.create(tenantId, null, "Orphan", null))
                     .isInstanceOf(IllegalArgumentException.class);
         } finally {
             entityManager.getTransaction().rollback();
