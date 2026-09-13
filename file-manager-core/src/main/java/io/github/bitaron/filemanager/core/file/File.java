@@ -130,6 +130,28 @@ public class File {
         this.lastModifiedBy = actor.id();
     }
 
+    /**
+     * Renames this File in place - a single-row update, per ADR 0003/0004. No uniqueness check
+     * against sibling names (ADR 0003: duplicate sibling names are legal).
+     */
+    void rename(String name, Actor actor, Instant now) {
+        this.name = name;
+        this.updatedAt = now;
+        this.lastModifiedBy = actor.id();
+    }
+
+    /**
+     * Re-parents this File in place - a single-row update, per ADR 0003/0004.
+     *
+     * @param parentFolderId the new parent Folder's id - never {@code null}, unlike
+     *     {@code Folder.moveTo} (ADR 0003: every File belongs to exactly one Folder)
+     */
+    void moveTo(UUID parentFolderId, Actor actor, Instant now) {
+        this.parentFolderId = parentFolderId;
+        this.updatedAt = now;
+        this.lastModifiedBy = actor.id();
+    }
+
     public TenantId tenantId() {
         return new TenantId(tenantId);
     }

@@ -3,12 +3,16 @@ package io.github.bitaron.filemanager.service.web;
 import java.net.URI;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Function;
 
+import io.github.bitaron.filemanager.api.file.FileResponse;
 import io.github.bitaron.filemanager.api.folder.CreateFolderRequest;
 import io.github.bitaron.filemanager.api.folder.FolderResponse;
 import io.github.bitaron.filemanager.api.folder.PatchFolderRequest;
 import io.github.bitaron.filemanager.api.paging.CursorPage;
 import io.github.bitaron.filemanager.core.Actor;
+import io.github.bitaron.filemanager.core.file.File;
+import io.github.bitaron.filemanager.core.file.FileService;
 import io.github.bitaron.filemanager.core.folder.Folder;
 import io.github.bitaron.filemanager.core.folder.FolderNotFoundException;
 import io.github.bitaron.filemanager.core.folder.FolderService;
@@ -18,6 +22,7 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -51,9 +56,23 @@ class FolderController {
     private static final int MAX_PAGE_SIZE = 200;
 
     private final FolderService folderService;
+    private final FileService fileService;
 
-    FolderController(FolderService folderService) {
+    /**
+     * {@code @Lazy} here (not just on {@code FilePersistenceAutoConfiguration.fileService}'s own
+     * bean method) is required: a plain constructor-injected {@link FileService} would force
+     * Spring to eagerly resolve that dependency the moment this singleton controller is created
+     * during context refresh, which defeats the whole point of the producer-side {@code @Lazy} in
+     * hosts that never configured a {@code StorageBackend} - this broke
+     * {@code FolderControllerIntegrationTest} and {@code FileManagerServiceApplicationTests} (no
+     * {@code file-manager.storage.backend} property set, so no {@code StorageBackend} bean) when
+     * first tried without it. {@code @Lazy} on this injection point makes Spring hand this
+     * controller a lazy proxy instead, deferring real {@link FileService} creation to the first
+     * actual File request. Mirrors {@link FileController}'s constructor exactly.
+     */
+    FolderController(FolderService folderService, @Lazy FileService fileService) {
         this.folderService = folderService;
+        this.fileService = fileService;
     }
 
     @PostMapping
@@ -84,17 +103,34 @@ class FolderController {
 
         int limit = clampPageSize(pageSize);
         List<Folder> fetched = folderService.listChildren(tenantId, parentId, cursor, limit + 1);
-        boolean hasNextPage = fetched.size() > limit;
-        List<Folder> page = hasNextPage ? fetched.subList(0, limit) : fetched;
-        UUID nextCursor = hasNextPage ? page.get(page.size() - 1).getId() : null;
-
-        return new CursorPage<>(page.stream().map(FolderMapper::toResponse).toList(), nextCursor);
+        return paginate(fetched, limit, Folder::getId, FolderMapper::toResponse);
     }
 
     @GetMapping("/{id}")
     @Operation(summary = "Fetch a single Folder's metadata")
     FolderResponse fetch(@PathVariable UUID id, TenantId tenantId) {
         return FolderMapper.toResponse(fetchOrThrow(tenantId, id));
+    }
+
+    @GetMapping("/{id}/files")
+    @Operation(
+            summary = "List a Folder's immediate Files",
+            description = "Cursor-paginated (ADR 0004): pass the previous page's nextCursor to "
+                    + "fetch the next one.")
+    CursorPage<FileResponse> listFiles(
+            @PathVariable UUID id,
+            @Parameter(description = "Opaque pagination cursor from a previous page's nextCursor")
+                    @RequestParam(required = false) UUID cursor,
+            @Parameter(description = "Page size, default 50, max 200")
+                    @RequestParam(required = false) Integer pageSize,
+            TenantId tenantId) {
+        if (folderService.fetch(tenantId, id) == null) {
+            throw new FolderNotFoundException("No Folder with id " + id + " exists for this Tenant");
+        }
+
+        int limit = clampPageSize(pageSize);
+        List<File> fetched = fileService.listFiles(tenantId, id, cursor, limit + 1);
+        return paginate(fetched, limit, File::getId, FileMapper::toResponse);
     }
 
     @PatchMapping("/{id}")
@@ -133,6 +169,20 @@ class FolderController {
             throw new FolderNotFoundException("No Folder with id " + folderId + " exists for this Tenant");
         }
         return folder;
+    }
+
+    /**
+     * Turns a "one extra row past {@code limit}" fetch (ADR 0004's cursor-pagination convention)
+     * into a {@link CursorPage}: trims the extra row if present and uses it to compute
+     * {@code nextCursor}. Shared between {@link #list} and {@link #listFiles} - both paginate the
+     * exact same way, just over a different entity/DTO pair.
+     */
+    private static <T, R> CursorPage<R> paginate(
+            List<T> fetchedPlusOne, int limit, Function<T, UUID> idOf, Function<T, R> mapper) {
+        boolean hasNextPage = fetchedPlusOne.size() > limit;
+        List<T> page = hasNextPage ? fetchedPlusOne.subList(0, limit) : fetchedPlusOne;
+        UUID nextCursor = hasNextPage ? idOf.apply(page.get(page.size() - 1)) : null;
+        return new CursorPage<>(page.stream().map(mapper).toList(), nextCursor);
     }
 
     private static int clampPageSize(Integer requested) {
