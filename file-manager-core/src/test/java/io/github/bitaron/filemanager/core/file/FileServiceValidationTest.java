@@ -3,6 +3,7 @@ package io.github.bitaron.filemanager.core.file;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.UUID;
 
 import io.github.bitaron.filemanager.core.Actor;
@@ -168,6 +169,124 @@ class FileServiceValidationTest {
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
+    @Test
+    void rejectsListFilesWithNullTenantId() {
+        UUID parentFolderId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> fileService.listFiles(null, parentFolderId))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void rejectsPagedListFilesWithNullTenantId() {
+        UUID parentFolderId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> fileService.listFiles(null, parentFolderId, null, 50))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void rejectsPagedListFilesWithNonPositiveLimit() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        UUID parentFolderId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> fileService.listFiles(tenantId, parentFolderId, null, 0))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void rejectsRenameWithNullTenantId() {
+        Actor actor = new Actor(UUID.randomUUID());
+        UUID fileId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> fileService.rename(null, actor, fileId, "New Name"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void rejectsRenameWithNullActor() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        UUID fileId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> fileService.rename(tenantId, null, fileId, "New Name"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void rejectsRenameWithNullFileId() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+
+        assertThatThrownBy(() -> fileService.rename(tenantId, actor, null, "New Name"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void rejectsRenameWithBlankName() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+        UUID fileId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> fileService.rename(tenantId, actor, fileId, "  "))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void rejectsRenameWithNullName() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+        UUID fileId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> fileService.rename(tenantId, actor, fileId, null))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void rejectsMoveWithNullTenantId() {
+        Actor actor = new Actor(UUID.randomUUID());
+        UUID fileId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> fileService.move(null, actor, fileId, UUID.randomUUID()))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void rejectsMoveWithNullActor() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        UUID fileId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> fileService.move(tenantId, null, fileId, UUID.randomUUID()))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void rejectsMoveWithNullFileId() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+
+        assertThatThrownBy(() -> fileService.move(tenantId, actor, null, UUID.randomUUID()))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    /**
+     * Unlike {@code Folder} (whose {@code parentFolderId} may be {@code null} - top-level), a
+     * File's {@code parentFolderId} is never {@code null} - every File belongs to exactly one
+     * Folder (ADR 0003), so there is no "move to top-level" for a File. Caught here as a pure
+     * guard clause - no lookup needed - mirroring how {@code FolderServiceValidationTest}'s
+     * {@code rejectsMovingAFolderIntoItself} catches Folder's self-parent case; File has no
+     * self-parent equivalent (a File's own id and a Folder id are never the same value/type of
+     * thing being compared).
+     */
+    @Test
+    void rejectsMoveWithNullParentFolderId() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+        UUID fileId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> fileService.move(tenantId, actor, fileId, null))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
     private static InputStream emptyContent() {
         return new ByteArrayInputStream("".getBytes(StandardCharsets.UTF_8));
     }
@@ -182,6 +301,17 @@ class FileServiceValidationTest {
 
             @Override
             public File findByIdForTenant(UUID id, TenantId tenantId) {
+                throw new AssertionError("A guard-clause rejection must never reach the DAO");
+            }
+
+            @Override
+            public List<File> findByParentFolderForTenant(UUID parentFolderId, TenantId tenantId) {
+                throw new AssertionError("A guard-clause rejection must never reach the DAO");
+            }
+
+            @Override
+            public List<File> findByParentFolderForTenant(
+                    UUID parentFolderId, TenantId tenantId, UUID afterId, int limit) {
                 throw new AssertionError("A guard-clause rejection must never reach the DAO");
             }
         };

@@ -2,6 +2,7 @@ package io.github.bitaron.filemanager.core.file;
 
 import java.io.InputStream;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 import io.github.bitaron.filemanager.core.Actor;
@@ -171,5 +172,112 @@ public class FileService {
         }
         InputStream content = storageBackend.retrieve(file.getStorageReference());
         return new FileContent(file, content);
+    }
+
+    /**
+     * Lists a Folder's Files, scoped to {@code tenantId}.
+     *
+     * @param parentFolderId the parent Folder's id - never {@code null}, unlike Folder's own
+     *     {@code parentFolderId} (ADR 0003: every File belongs to exactly one Folder)
+     * @throws IllegalArgumentException if {@code tenantId} is missing
+     */
+    public List<File> listFiles(TenantId tenantId, UUID parentFolderId) {
+        if (tenantId == null) {
+            throw new IllegalArgumentException("tenantId must not be null");
+        }
+        return fileLookup.findByParentFolderForTenant(parentFolderId, tenantId);
+    }
+
+    /**
+     * Lists a Folder's Files one page at a time, scoped to {@code tenantId} - the seam the
+     * Standalone Service's cursor pagination is built on (ADR 0004: cursor pagination over the
+     * already-time-ordered UUIDv7 PK), mirroring {@code FolderService#listChildren(TenantId, UUID,
+     * UUID, int)}. Callers ask for one extra row past {@code limit} to learn whether a next page
+     * exists, the same convention {@code afterId} feeds back in as the next request's cursor.
+     *
+     * @param parentFolderId the parent Folder's id - never {@code null}
+     * @param afterId list Files whose id sorts after this one, or {@code null} to start from the
+     *     beginning
+     * @param limit the maximum number of Files to return
+     * @throws IllegalArgumentException if {@code tenantId} is missing or {@code limit} is not
+     *     positive
+     */
+    public List<File> listFiles(TenantId tenantId, UUID parentFolderId, UUID afterId, int limit) {
+        if (tenantId == null) {
+            throw new IllegalArgumentException("tenantId must not be null");
+        }
+        if (limit <= 0) {
+            throw new IllegalArgumentException("limit must be positive");
+        }
+        return fileLookup.findByParentFolderForTenant(parentFolderId, tenantId, afterId, limit);
+    }
+
+    /**
+     * Renames a File in place - a single-row update (ADR 0003/0004). Duplicate sibling names stay
+     * legal (ADR 0003), so no uniqueness check is performed. Mirrors
+     * {@code FolderService#rename} exactly.
+     *
+     * @throws IllegalArgumentException if {@code tenantId}, {@code actor}, or {@code fileId} is
+     *     missing, or {@code name} is missing/blank
+     * @throws FileNotFoundException if no File with {@code fileId} exists for this Tenant
+     */
+    public File rename(TenantId tenantId, Actor actor, UUID fileId, String name) {
+        if (tenantId == null) {
+            throw new IllegalArgumentException("tenantId must not be null");
+        }
+        if (actor == null) {
+            throw new IllegalArgumentException("actor must not be null");
+        }
+        if (fileId == null) {
+            throw new IllegalArgumentException("fileId must not be null");
+        }
+        if (name == null || name.isBlank()) {
+            throw new IllegalArgumentException("name must not be null or blank");
+        }
+        File file = fileLookup.findByIdForTenant(fileId, tenantId);
+        if (file == null) {
+            throw new FileNotFoundException("No File with id " + fileId + " exists for this Tenant");
+        }
+        file.rename(name, actor, Instant.now());
+        return fileLookup.save(file);
+    }
+
+    /**
+     * Moves a File to a different parent Folder - a single-row update (ADR 0003/0004).
+     *
+     * <p>Unlike {@code FolderService#move}, {@code parentFolderId} is itself required: a File can
+     * never be top-level (ADR 0003: every File belongs to exactly one Folder), so there is no
+     * "move to top-level" case here. There is likewise no self-parent check - a File's id and a
+     * Folder's id are different entity-id types, so a File can never equal its own parent.
+     *
+     * @throws IllegalArgumentException if {@code tenantId}, {@code actor}, {@code fileId}, or
+     *     {@code parentFolderId} is missing
+     * @throws FileNotFoundException if no File with {@code fileId} exists for this Tenant
+     * @throws FolderNotFoundException if no Folder with {@code parentFolderId} exists for this
+     *     Tenant
+     */
+    public File move(TenantId tenantId, Actor actor, UUID fileId, UUID parentFolderId) {
+        if (tenantId == null) {
+            throw new IllegalArgumentException("tenantId must not be null");
+        }
+        if (actor == null) {
+            throw new IllegalArgumentException("actor must not be null");
+        }
+        if (fileId == null) {
+            throw new IllegalArgumentException("fileId must not be null");
+        }
+        if (parentFolderId == null) {
+            throw new IllegalArgumentException("parentFolderId must not be null");
+        }
+        File file = fileLookup.findByIdForTenant(fileId, tenantId);
+        if (file == null) {
+            throw new FileNotFoundException("No File with id " + fileId + " exists for this Tenant");
+        }
+        if (folderService.fetch(tenantId, parentFolderId) == null) {
+            throw new FolderNotFoundException(
+                    "No Folder with id " + parentFolderId + " exists for this Tenant");
+        }
+        file.moveTo(parentFolderId, actor, Instant.now());
+        return fileLookup.save(file);
     }
 }

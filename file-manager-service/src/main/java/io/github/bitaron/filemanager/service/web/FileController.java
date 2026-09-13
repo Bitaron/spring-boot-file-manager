@@ -9,6 +9,7 @@ import java.util.UUID;
 import io.github.bitaron.filemanager.api.accesstoken.AccessTokenResponse;
 import io.github.bitaron.filemanager.api.accesstoken.MintAccessTokenRequest;
 import io.github.bitaron.filemanager.api.file.FileResponse;
+import io.github.bitaron.filemanager.api.file.PatchFileRequest;
 import io.github.bitaron.filemanager.api.file.UploadFileMetadata;
 import io.github.bitaron.filemanager.core.Actor;
 import io.github.bitaron.filemanager.core.accesstoken.AccessToken;
@@ -16,11 +17,14 @@ import io.github.bitaron.filemanager.core.accesstoken.AccessTokenService;
 import io.github.bitaron.filemanager.core.accesstoken.Purpose;
 import io.github.bitaron.filemanager.core.file.File;
 import io.github.bitaron.filemanager.core.file.FileContent;
+import io.github.bitaron.filemanager.core.file.FileNotFoundException;
 import io.github.bitaron.filemanager.core.file.FileService;
 import io.github.bitaron.filemanager.core.file.Visibility;
 import io.github.bitaron.filemanager.core.tenant.TenantId;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.core.io.InputStreamResource;
@@ -29,6 +33,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -38,6 +43,7 @@ import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
+import tools.jackson.databind.JsonNode;
 
 /**
  * The Standalone Service's File slice (issue #33): wraps {@link FileService} over {@code
@@ -130,6 +136,42 @@ class FileController {
                 .body(new InputStreamResource(fileContent.content()));
     }
 
+    @GetMapping("/{id}")
+    @Operation(summary = "Fetch a single File's metadata")
+    FileResponse fetch(@PathVariable UUID id, TenantId tenantId) {
+        return FileMapper.toResponse(fetchOrThrow(tenantId, id));
+    }
+
+    @PatchMapping("/{id}")
+    @Transactional
+    @Operation(
+            summary = "Rename and/or move a File",
+            description = "Omit a field to leave it unchanged. A File can never be top-level, so "
+                    + "a present parentFolderId of null is rejected with a 400.")
+    FileResponse patch(
+            @PathVariable UUID id,
+            @io.swagger.v3.oas.annotations.parameters.RequestBody(
+                    content = @Content(schema = @Schema(implementation = PatchFileRequest.class)))
+                    @RequestBody JsonNode body,
+            TenantId tenantId,
+            Actor actor) {
+        File file = null;
+
+        if (body.has("name")) {
+            String name = body.get("name").isNull() ? null : body.get("name").asText();
+            file = fileService.rename(tenantId, actor, id, name);
+        }
+        if (body.has("parentFolderId")) {
+            JsonNode parentFolderIdNode = body.get("parentFolderId");
+            UUID parentFolderId = parentFolderIdNode.isNull()
+                    ? null
+                    : UUID.fromString(parentFolderIdNode.asText());
+            file = fileService.move(tenantId, actor, id, parentFolderId);
+        }
+
+        return FileMapper.toResponse(file != null ? file : fetchOrThrow(tenantId, id));
+    }
+
     @PostMapping("/{id}/access-tokens")
     @Transactional
     @Operation(
@@ -146,6 +188,14 @@ class FileController {
         AccessTokenResponse response = new AccessTokenResponse(
                 accessToken.getToken(), accessToken.getExpiresAt(), redemptionUrlOf(accessToken.getToken()));
         return ResponseEntity.ok(response);
+    }
+
+    private File fetchOrThrow(TenantId tenantId, UUID fileId) {
+        File file = fileService.fetch(tenantId, fileId);
+        if (file == null) {
+            throw new FileNotFoundException("No File with id " + fileId + " exists for this Tenant");
+        }
+        return file;
     }
 
     private static Visibility parseVisibility(String visibility) {

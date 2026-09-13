@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.UUID;
 
 import javax.sql.DataSource;
@@ -114,6 +115,75 @@ class FilePersistenceIntegrationTest {
         assertThat(downloaded.file().getContentType()).isEqualTo("text/plain");
         try (InputStream content = downloaded.content()) {
             assertThat(content.readAllBytes()).isEqualTo(uploadedBytes);
+        }
+    }
+
+    /**
+     * Mirrors {@link FolderPersistenceIntegrationTest#fetchesAndListsFoldersAgainstTheHostDataSource},
+     * adapted for File's own {@code listFiles} seam.
+     */
+    @Test
+    void listsFilesAgainstTheHostDataSource() throws IOException {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+        Folder folder = folderService.create(tenantId, actor, "Invoices", null);
+        Folder otherFolder = folderService.create(tenantId, actor, "Receipts", null);
+
+        File child = uploadFile(tenantId, actor, folder.getId(), "invoice.txt", "invoice content");
+        uploadFile(tenantId, actor, otherFolder.getId(), "receipt.txt", "receipt content");
+
+        entityManager.flush();
+        entityManager.clear();
+
+        List<File> children = fileService.listFiles(tenantId, folder.getId());
+        assertThat(children).extracting(File::getId).containsExactly(child.getId());
+    }
+
+    /**
+     * Mirrors {@link FolderPersistenceIntegrationTest#renamesFolderAgainstTheHostDataSource}.
+     */
+    @Test
+    void renamesFileAgainstTheHostDataSource() throws IOException {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+        Folder folder = folderService.create(tenantId, actor, "Invoices", null);
+        File uploaded = uploadFile(tenantId, actor, folder.getId(), "invoice.txt", "invoice content");
+
+        fileService.rename(tenantId, actor, uploaded.getId(), "receipt.txt");
+
+        entityManager.flush();
+        entityManager.clear();
+        File reloaded = entityManager.find(File.class, uploaded.getId());
+
+        assertThat(reloaded.getName()).isEqualTo("receipt.txt");
+    }
+
+    /**
+     * Mirrors {@link FolderPersistenceIntegrationTest#movesFolderToADifferentParentAndThenToTopLevelAgainstTheHostDataSource},
+     * minus the "move to top-level" half - a File can never be top-level (ADR 0003: every File
+     * belongs to exactly one Folder), unlike Folder.
+     */
+    @Test
+    void movesFileToADifferentParentAgainstTheHostDataSource() throws IOException {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+        Folder oldParent = folderService.create(tenantId, actor, "2026 Q1", null);
+        Folder newParent = folderService.create(tenantId, actor, "2026 Q2", null);
+        File uploaded = uploadFile(tenantId, actor, oldParent.getId(), "invoice.txt", "invoice content");
+
+        fileService.move(tenantId, actor, uploaded.getId(), newParent.getId());
+
+        entityManager.flush();
+        entityManager.clear();
+        File reloadedAfterMove = entityManager.find(File.class, uploaded.getId());
+        assertThat(reloadedAfterMove.getParentFolderId()).isEqualTo(newParent.getId());
+    }
+
+    private File uploadFile(TenantId tenantId, Actor actor, UUID folderId, String name, String content)
+            throws IOException {
+        byte[] bytes = content.getBytes(StandardCharsets.UTF_8);
+        try (InputStream input = new ByteArrayInputStream(bytes)) {
+            return fileService.upload(tenantId, actor, folderId, name, null, input, bytes.length, "text/plain");
         }
     }
 

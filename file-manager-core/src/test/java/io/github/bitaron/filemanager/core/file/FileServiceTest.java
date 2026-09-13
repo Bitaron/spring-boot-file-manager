@@ -6,11 +6,13 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
 import io.github.bitaron.filemanager.core.Actor;
 import io.github.bitaron.filemanager.core.folder.Folder;
+import io.github.bitaron.filemanager.core.folder.FolderNotFoundException;
 import io.github.bitaron.filemanager.core.folder.FolderService;
 import io.github.bitaron.filemanager.core.jpa.TestEntityManagerFactory;
 import io.github.bitaron.filemanager.core.tenant.TenantId;
@@ -226,6 +228,72 @@ class FileServiceTest {
                 .isInstanceOf(FileNotFoundException.class);
     }
 
+    @Test
+    void renameUpdatesNameBumpsUpdatedAtAndLastModifiedByAndPersistsViaFileLookup() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor creator = new Actor(UUID.randomUUID());
+        Actor renamer = new Actor(UUID.randomUUID());
+        File existing = new File(UUID.randomUUID(), tenantId, UUID.randomUUID(), "invoice.pdf", 11,
+                "application/pdf", Visibility.PRIVATE, "some/reference", creator, Instant.now());
+
+        FakeFileLookup fileLookup = new FakeFileLookup();
+        fileLookup.byId.put(existing.getId(), existing);
+        FileService fileService = new FileService(fileLookup, folderService, new FakeStorageBackend());
+
+        File renamed = fileService.rename(tenantId, renamer, existing.getId(), "Invoice Final.pdf");
+
+        assertThat(renamed.getName()).isEqualTo("Invoice Final.pdf");
+        assertThat(renamed.lastModifiedBy()).isEqualTo(renamer);
+        assertThat(renamed.getUpdatedAt()).isAfterOrEqualTo(renamed.getCreatedAt());
+        assertThat(fileLookup.saved).isSameAs(existing);
+    }
+
+    @Test
+    void moveUpdatesParentFolderIdAndPersistsViaFileLookup() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+
+        entityManager.getTransaction().begin();
+        Folder destination = folderService.create(tenantId, actor, "Archive", null);
+        entityManager.getTransaction().commit();
+
+        File existing = new File(UUID.randomUUID(), tenantId, UUID.randomUUID(), "invoice.pdf", 11,
+                "application/pdf", Visibility.PRIVATE, "some/reference", actor, Instant.now());
+        FakeFileLookup fileLookup = new FakeFileLookup();
+        fileLookup.byId.put(existing.getId(), existing);
+        FileService fileService = new FileService(fileLookup, folderService, new FakeStorageBackend());
+
+        File moved = fileService.move(tenantId, actor, existing.getId(), destination.getId());
+
+        assertThat(moved.getParentFolderId()).isEqualTo(destination.getId());
+        assertThat(fileLookup.saved).isSameAs(existing);
+    }
+
+    @Test
+    void moveToANonExistentFolderThrowsFolderNotFoundException() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+        File existing = new File(UUID.randomUUID(), tenantId, UUID.randomUUID(), "invoice.pdf", 11,
+                "application/pdf", Visibility.PRIVATE, "some/reference", actor, Instant.now());
+        FakeFileLookup fileLookup = new FakeFileLookup();
+        fileLookup.byId.put(existing.getId(), existing);
+        FileService fileService = new FileService(fileLookup, folderService, new FakeStorageBackend());
+
+        assertThatThrownBy(() -> fileService.move(tenantId, actor, existing.getId(), UUID.randomUUID()))
+                .isInstanceOf(FolderNotFoundException.class);
+    }
+
+    @Test
+    void moveOfANonExistentFileThrowsFileNotFoundException() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+        FakeFileLookup fileLookup = new FakeFileLookup();
+        FileService fileService = new FileService(fileLookup, folderService, new FakeStorageBackend());
+
+        assertThatThrownBy(() -> fileService.move(tenantId, actor, UUID.randomUUID(), UUID.randomUUID()))
+                .isInstanceOf(FileNotFoundException.class);
+    }
+
     /** Captures what it was asked to save, and answers lookups from a preloaded map. */
     private static final class FakeFileLookup implements FileLookup {
         private final Map<UUID, File> byId = new HashMap<>();
@@ -240,6 +308,17 @@ class FileServiceTest {
         @Override
         public File findByIdForTenant(UUID id, TenantId tenantId) {
             return byId.get(id);
+        }
+
+        @Override
+        public List<File> findByParentFolderForTenant(UUID parentFolderId, TenantId tenantId) {
+            throw new AssertionError("not expected to be called by upload()/fetch()/fetchContent()");
+        }
+
+        @Override
+        public List<File> findByParentFolderForTenant(
+                UUID parentFolderId, TenantId tenantId, UUID afterId, int limit) {
+            throw new AssertionError("not expected to be called by upload()/fetch()/fetchContent()");
         }
     }
 
@@ -261,6 +340,17 @@ class FileServiceTest {
 
             @Override
             public File findByIdForTenant(UUID id, TenantId tenantId) {
+                throw new AssertionError("not expected to be called by upload()");
+            }
+
+            @Override
+            public List<File> findByParentFolderForTenant(UUID parentFolderId, TenantId tenantId) {
+                throw new AssertionError("not expected to be called by upload()");
+            }
+
+            @Override
+            public List<File> findByParentFolderForTenant(
+                    UUID parentFolderId, TenantId tenantId, UUID afterId, int limit) {
                 throw new AssertionError("not expected to be called by upload()");
             }
         };
