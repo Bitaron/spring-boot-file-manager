@@ -17,6 +17,7 @@
         <class>io.github.bitaron.filemanager.core.tenant.Tenant</class>
         <class>io.github.bitaron.filemanager.core.apikey.ApiKey</class>
         <class>io.github.bitaron.filemanager.core.folder.Folder</class>
+        <class>io.github.bitaron.filemanager.core.file.File</class>
 
         <exclude-unlisted-classes>true</exclude-unlisted-classes>
 

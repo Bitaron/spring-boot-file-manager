@@ -32,6 +32,16 @@
         </dependency>
 
         <!--
+            The StorageBackend contract (ADR 0002): FileService holds a StorageBackend
+            reference and round-trips its opaque storageReference string, never
+            interpreting it - no implementation dependency here, just the interface.
+        -->
+        <dependency>
+            <groupId>io.github.bitaron</groupId>
+            <artifactId>file-manager-storage-api</artifactId>
+        </dependency>
+
+        <!--
             Test-only JPA provider + in-memory database: core's own DAO tests need a real
             EntityManager to prove indexed lookups (e.g. ApiKey's key_hash, Folder's
             tenant_id/parent_folder_id) work, without pulling in a Spring context
