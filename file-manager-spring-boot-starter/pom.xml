@@ -45,5 +45,18 @@
             <artifactId>h2</artifactId>
             <scope>test</scope>
         </dependency>
+        <!--
+            Test-only: the File persistence Embedded Mode integration test proves a real
+            upload/download round-trip through an actual StorageBackend (per docs/testing.md), not
+            just metadata through the database - file-manager-storage-local's own @AutoConfiguration
+            self-registers via its module's AutoConfiguration.imports (see
+            LocalStorageAutoConfiguration's javadoc), so simply being on the test classpath with the
+            file-manager.storage.backend=local property set is enough.
+        -->
+        <dependency>
+            <groupId>io.github.bitaron</groupId>
+            <artifactId>file-manager-storage-local</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 </project>

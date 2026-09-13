@@ -1,2 +1,3 @@
 io.github.bitaron.filemanager.autoconfigure.FolderPersistenceAutoConfiguration
 io.github.bitaron.filemanager.autoconfigure.ApiKeyPersistenceAutoConfiguration
+io.github.bitaron.filemanager.autoconfigure.FilePersistenceAutoConfiguration
