@@ -75,6 +75,97 @@ class FolderServiceValidationTest {
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
+    @Test
+    void rejectsRenameWithNullTenantId() {
+        Actor actor = new Actor(UUID.randomUUID());
+        UUID folderId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> folderService.rename(null, actor, folderId, "New Name"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void rejectsRenameWithNullActor() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        UUID folderId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> folderService.rename(tenantId, null, folderId, "New Name"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void rejectsRenameWithNullFolderId() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+
+        assertThatThrownBy(() -> folderService.rename(tenantId, actor, null, "New Name"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void rejectsRenameWithBlankName() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+        UUID folderId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> folderService.rename(tenantId, actor, folderId, "  "))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void rejectsRenameWithNullName() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+        UUID folderId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> folderService.rename(tenantId, actor, folderId, null))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void rejectsMoveWithNullTenantId() {
+        Actor actor = new Actor(UUID.randomUUID());
+        UUID folderId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> folderService.move(null, actor, folderId, null))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void rejectsMoveWithNullActor() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        UUID folderId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> folderService.move(tenantId, null, folderId, null))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void rejectsMoveWithNullFolderId() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+
+        assertThatThrownBy(() -> folderService.move(tenantId, actor, null, null))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    /**
+     * A Folder as its own parent is a one-row cycle: ADR 0003's ancestor-trashed check and
+     * breadcrumb navigation walk the parent chain at read time, and that walk never terminates
+     * against a self-referencing row. Caught here as a pure guard clause - comparing the two ids
+     * needs no lookup, unlike full descendant-cycle detection, which would need to walk the chain
+     * and isn't asked for by this ticket.
+     */
+    @Test
+    void rejectsMovingAFolderIntoItself() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+        UUID folderId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> folderService.move(tenantId, actor, folderId, folderId))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
     /** Every guard clause above rejects before {@code create} would ever reach the DAO. */
     private static FolderLookup rejectingLookup() {
         return new FolderLookup() {

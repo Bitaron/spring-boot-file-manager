@@ -103,6 +103,46 @@ class FolderPersistenceIntegrationTest {
         assertThat(topLevel).extracting(Folder::getId).containsExactly(parent.getId());
     }
 
+    @Test
+    void renamesFolderAgainstTheHostDataSource() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+
+        Folder created = folderService.create(tenantId, actor, "Quarterly Reports", null);
+
+        folderService.rename(tenantId, actor, created.getId(), "Annual Reports");
+
+        entityManager.flush();
+        entityManager.clear();
+        Folder reloaded = entityManager.find(Folder.class, created.getId());
+
+        assertThat(reloaded.getName()).isEqualTo("Annual Reports");
+    }
+
+    @Test
+    void movesFolderToADifferentParentAndThenToTopLevelAgainstTheHostDataSource() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+
+        Folder oldParent = folderService.create(tenantId, actor, "2026 Q1", null);
+        Folder newParent = folderService.create(tenantId, actor, "2026 Q2", null);
+        Folder child = folderService.create(tenantId, actor, "Invoice.pdf", oldParent.getId());
+
+        folderService.move(tenantId, actor, child.getId(), newParent.getId());
+
+        entityManager.flush();
+        entityManager.clear();
+        Folder reloadedAfterMove = entityManager.find(Folder.class, child.getId());
+        assertThat(reloadedAfterMove.getParentFolderId()).isEqualTo(newParent.getId());
+
+        folderService.move(tenantId, actor, child.getId(), null);
+
+        entityManager.flush();
+        entityManager.clear();
+        Folder reloadedAfterTopLevelMove = entityManager.find(Folder.class, child.getId());
+        assertThat(reloadedAfterTopLevelMove.getParentFolderId()).isNull();
+    }
+
     /**
      * Minimal host application: only a {@link DataSource} bean, no persistence.xml, no entity
      * scan of its own - everything else (entity scan registration, {@code EntityManagerFactory},

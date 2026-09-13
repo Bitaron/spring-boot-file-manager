@@ -215,4 +215,177 @@ class FolderServiceTest {
         assertThat(otherTenantTopLevel).extracting(Folder::getName)
                 .containsExactly("Someone Else's Folder");
     }
+
+    @Test
+    void renamesFolderAndRecordsTheRenamingActor() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor creator = new Actor(UUID.randomUUID());
+        Actor renamer = new Actor(UUID.randomUUID());
+
+        entityManager.getTransaction().begin();
+        Folder created = folderService.create(tenantId, creator, "Quarterly Reports", null);
+        entityManager.getTransaction().commit();
+
+        entityManager.getTransaction().begin();
+        folderService.rename(tenantId, renamer, created.getId(), "Annual Reports");
+        entityManager.getTransaction().commit();
+
+        entityManager.clear();
+        Folder reloaded = entityManager.find(Folder.class, created.getId());
+
+        assertThat(reloaded.getName()).isEqualTo("Annual Reports");
+        assertThat(reloaded.lastModifiedBy()).isEqualTo(renamer);
+        assertThat(reloaded.getUpdatedAt()).isAfterOrEqualTo(reloaded.getCreatedAt());
+    }
+
+    @Test
+    void rejectsRenameOfNonexistentFolder() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+        UUID nonexistentFolderId = UUID.randomUUID();
+
+        entityManager.getTransaction().begin();
+        try {
+            assertThatThrownBy(() -> folderService.rename(tenantId, actor, nonexistentFolderId, "New Name"))
+                    .isInstanceOf(IllegalArgumentException.class);
+        } finally {
+            entityManager.getTransaction().rollback();
+        }
+    }
+
+    @Test
+    void rejectsRenameOfFolderBelongingToAnotherTenant() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        TenantId otherTenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+
+        entityManager.getTransaction().begin();
+        Folder created = folderService.create(tenantId, actor, "Quarterly Reports", null);
+        entityManager.getTransaction().commit();
+
+        entityManager.getTransaction().begin();
+        try {
+            assertThatThrownBy(() -> folderService.rename(otherTenantId, actor, created.getId(), "New Name"))
+                    .isInstanceOf(IllegalArgumentException.class);
+        } finally {
+            entityManager.getTransaction().rollback();
+        }
+    }
+
+    @Test
+    void movesFolderToADifferentParentAsASingleRowUpdate() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+
+        entityManager.getTransaction().begin();
+        Folder oldParent = folderService.create(tenantId, actor, "2026 Q1", null);
+        Folder newParent = folderService.create(tenantId, actor, "2026 Q2", null);
+        Folder child = folderService.create(tenantId, actor, "Invoice.pdf", oldParent.getId());
+        entityManager.getTransaction().commit();
+
+        entityManager.getTransaction().begin();
+        folderService.move(tenantId, actor, child.getId(), newParent.getId());
+        entityManager.getTransaction().commit();
+
+        entityManager.clear();
+        Folder reloaded = entityManager.find(Folder.class, child.getId());
+
+        assertThat(reloaded.getParentFolderId()).isEqualTo(newParent.getId());
+    }
+
+    @Test
+    void movesFolderToTopLevelAsASingleRowUpdate() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+
+        entityManager.getTransaction().begin();
+        Folder parent = folderService.create(tenantId, actor, "Quarterly Reports", null);
+        Folder child = folderService.create(tenantId, actor, "2026 Q1", parent.getId());
+        entityManager.getTransaction().commit();
+
+        entityManager.getTransaction().begin();
+        folderService.move(tenantId, actor, child.getId(), null);
+        entityManager.getTransaction().commit();
+
+        entityManager.clear();
+        Folder reloaded = entityManager.find(Folder.class, child.getId());
+
+        assertThat(reloaded.getParentFolderId()).isNull();
+    }
+
+    @Test
+    void rejectsMoveToNonexistentParent() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+        UUID nonexistentParentId = UUID.randomUUID();
+
+        entityManager.getTransaction().begin();
+        Folder folder = folderService.create(tenantId, actor, "Quarterly Reports", null);
+        entityManager.getTransaction().commit();
+
+        entityManager.getTransaction().begin();
+        try {
+            assertThatThrownBy(() -> folderService.move(tenantId, actor, folder.getId(), nonexistentParentId))
+                    .isInstanceOf(IllegalArgumentException.class);
+        } finally {
+            entityManager.getTransaction().rollback();
+        }
+    }
+
+    @Test
+    void rejectsMoveOfNonexistentFolder() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+        UUID nonexistentFolderId = UUID.randomUUID();
+
+        entityManager.getTransaction().begin();
+        try {
+            assertThatThrownBy(() -> folderService.move(tenantId, actor, nonexistentFolderId, null))
+                    .isInstanceOf(IllegalArgumentException.class);
+        } finally {
+            entityManager.getTransaction().rollback();
+        }
+    }
+
+    @Test
+    void allowsRenamingToAnExistingSiblingsName() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+
+        entityManager.getTransaction().begin();
+        folderService.create(tenantId, actor, "Invoices", null);
+        Folder second = folderService.create(tenantId, actor, "Receipts", null);
+        entityManager.getTransaction().commit();
+
+        entityManager.getTransaction().begin();
+        Folder renamed = folderService.rename(tenantId, actor, second.getId(), "Invoices");
+        entityManager.getTransaction().commit();
+
+        entityManager.clear();
+        Folder reloaded = entityManager.find(Folder.class, renamed.getId());
+
+        assertThat(reloaded.getName()).isEqualTo("Invoices");
+    }
+
+    @Test
+    void allowsMovingAFolderNextToAnExistingSameNamedSibling() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+
+        entityManager.getTransaction().begin();
+        Folder destination = folderService.create(tenantId, actor, "Quarterly Reports", null);
+        folderService.create(tenantId, actor, "Invoices", destination.getId());
+        Folder moving = folderService.create(tenantId, actor, "Invoices", null);
+        entityManager.getTransaction().commit();
+
+        entityManager.getTransaction().begin();
+        folderService.move(tenantId, actor, moving.getId(), destination.getId());
+        entityManager.getTransaction().commit();
+
+        entityManager.clear();
+        List<Folder> children = folderService.listChildren(tenantId, destination.getId());
+
+        assertThat(children).extracting(Folder::getName)
+                .containsExactlyInAnyOrder("Invoices", "Invoices");
+    }
 }
