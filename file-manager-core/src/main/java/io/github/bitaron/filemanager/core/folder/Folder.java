@@ -30,6 +30,14 @@ import lombok.NoArgsConstructor;
 @Entity
 @Table(
         name = "folder",
+        // ADR 0003 calls tenant_id and parent_folder_id "indexed" individually, plus a composite
+        // (tenant_id, parent_folder_id) index for "list children" queries. Neither needs its own
+        // standalone index on top of the composite: a B-tree index serves any left-prefix of its
+        // columns, so the composite alone already covers tenant_id-only lookups (a dedicated
+        // single-column index would just duplicate it, at pure write/storage cost). No
+        // parent_folder_id-only index either: every lookup in this codebase is Tenant-scoped
+        // (docs/java-conventions.md), so a parent_folder_id-only query - the one shape the
+        // composite's non-leading column wouldn't serve - never occurs.
         indexes = @Index(name = "idx_folder_tenant_parent", columnList = "tenant_id, parent_folder_id"))
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Folder {
@@ -44,6 +52,9 @@ public class Folder {
     @Getter
     private UUID id;
 
+    // FK -> tenant(id) per ADR 0003, enforced at the schema-DDL level, not as a JPA
+    // @ManyToOne - core has no need to navigate to the Tenant entity here (matches ApiKey's
+    // convention).
     @Column(name = "tenant_id", nullable = false, updatable = false)
     private UUID tenantId;
 
