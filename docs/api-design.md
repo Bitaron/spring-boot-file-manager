@@ -4,6 +4,8 @@
 
 Every Standalone Service endpoint is authenticated by an `ApiKey`, scoped to exactly one Tenant (see [glossary](../CONTEXT.md)). Resolve the ApiKey to its Tenant before any Folder/File lookup — never accept a Tenant id from the request body or path as the sole isolation check.
 
+The secret is presented as a standard `Authorization: Bearer <secret>` header (not ADR-normative — no header convention was specified ahead of implementation — but the natural fit for a bearer-style credential, chosen when the first REST slice landed, issue #31).
+
 ## Secure vs Non-secure Access
 
 - **Secure Access** (authenticated, ApiKey-bearing) is the only path for a `Private` File's content.

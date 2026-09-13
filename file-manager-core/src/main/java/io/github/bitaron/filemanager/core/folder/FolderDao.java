@@ -58,4 +58,29 @@ class FolderDao implements FolderLookup {
         }
         return query.getResultList();
     }
+
+    /**
+     * Same shape as {@link #findChildrenForTenant(UUID, TenantId)}, plus an id-ascending order
+     * (the composite index already used above serves this ordering too, per ADR 0003's
+     * time-ordered UUIDv7 rationale) and an optional {@code id > :afterId} predicate for the
+     * cursor.
+     */
+    @Override
+    public List<Folder> findChildrenForTenant(
+            UUID parentFolderId, TenantId tenantId, UUID afterId, int limit) {
+        String jpql = "SELECT f FROM Folder f WHERE f.tenantId = :tenantId AND f.parentFolderId "
+                + (parentFolderId == null ? "IS NULL" : "= :parentFolderId")
+                + (afterId == null ? "" : " AND f.id > :afterId")
+                + " ORDER BY f.id ASC";
+        TypedQuery<Folder> query = entityManager.createQuery(jpql, Folder.class);
+        query.setParameter("tenantId", tenantId.id());
+        if (parentFolderId != null) {
+            query.setParameter("parentFolderId", parentFolderId);
+        }
+        if (afterId != null) {
+            query.setParameter("afterId", afterId);
+        }
+        query.setMaxResults(limit);
+        return query.getResultList();
+    }
 }

@@ -76,6 +76,20 @@ class FolderServiceValidationTest {
     }
 
     @Test
+    void rejectsPagedListChildrenWithNullTenantId() {
+        assertThatThrownBy(() -> folderService.listChildren(null, null, null, 50))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void rejectsPagedListChildrenWithNonPositiveLimit() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+
+        assertThatThrownBy(() -> folderService.listChildren(tenantId, null, null, 0))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     void rejectsRenameWithNullTenantId() {
         Actor actor = new Actor(UUID.randomUUID());
         UUID folderId = UUID.randomUUID();
@@ -181,6 +195,12 @@ class FolderServiceValidationTest {
 
             @Override
             public List<Folder> findChildrenForTenant(UUID parentFolderId, TenantId tenantId) {
+                throw new AssertionError("A guard-clause rejection must never reach the DAO");
+            }
+
+            @Override
+            public List<Folder> findChildrenForTenant(
+                    UUID parentFolderId, TenantId tenantId, UUID afterId, int limit) {
                 throw new AssertionError("A guard-clause rejection must never reach the DAO");
             }
         };

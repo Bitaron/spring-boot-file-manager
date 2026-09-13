@@ -23,6 +23,10 @@
 
         <spring-boot.version>4.1.1</spring-boot.version>
         <lombok.version>1.18.42</lombok.version>
+        <!-- Not part of the Spring Boot BOM - pinned here so every module resolves the same
+             version (docs/java-conventions.md's "keep the BOM current" rule extended to the one
+             dependency it doesn't manage). -->
+        <springdoc-openapi.version>3.1.0</springdoc-openapi.version>
     </properties>
 
     <modules>
@@ -88,6 +92,12 @@
                 <groupId>io.github.bitaron</groupId>
                 <artifactId>file-manager-test-support</artifactId>
                 <version>${project.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>org.springdoc</groupId>
+                <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+                <version>${springdoc-openapi.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

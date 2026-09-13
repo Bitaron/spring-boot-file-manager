@@ -11,6 +11,7 @@ import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnSingleCandidate;
 import org.springframework.boot.hibernate.autoconfigure.HibernateJpaAutoConfiguration;
+import org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration;
 import org.springframework.boot.persistence.autoconfigure.EntityScanPackages;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
@@ -25,12 +26,17 @@ import org.springframework.orm.jpa.SharedEntityManagerCreator;
  * switch, so unlike the {@code file-manager-storage-*} autoconfigurations this one has no
  * {@code @ConditionalOnProperty} guard.
  *
- * <p>Ordered ({@code before = HibernateJpaAutoConfiguration.class}) so {@link Folder}'s package is
+ * <p>Ordered {@code before = HibernateJpaAutoConfiguration.class} so {@link Folder}'s package is
  * folded into the host's entity scan (via {@link EntityScanPackages#register}) before Hibernate
  * builds its {@code EntityManagerFactory} - the same mechanism Spring Boot's own autoconfiguration
  * modules use to contribute entity packages, so the host never needs its own {@code @EntityScan}.
+ * Also ordered {@code after = DataSourceAutoConfiguration.class}: without it, when a host relies
+ * on Spring Boot's own {@code DataSourceAutoConfiguration} to supply the {@code DataSource} (e.g.
+ * its embedded-database auto-configuration, rather than declaring a {@code @Bean} of its own),
+ * this class's {@link ConditionalOnSingleCandidate} can be evaluated before that bean definition
+ * exists, silently skipping all of Folder persistence's wiring.
  */
-@AutoConfiguration(before = HibernateJpaAutoConfiguration.class)
+@AutoConfiguration(before = HibernateJpaAutoConfiguration.class, after = DataSourceAutoConfiguration.class)
 @ConditionalOnSingleCandidate(DataSource.class)
 @Import(FolderPersistenceAutoConfiguration.FolderEntityScanRegistrar.class)
 public class FolderPersistenceAutoConfiguration {
