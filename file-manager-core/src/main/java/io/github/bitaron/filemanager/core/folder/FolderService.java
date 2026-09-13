@@ -81,4 +81,69 @@ public class FolderService {
         }
         return folderLookup.findChildrenForTenant(parentFolderId, tenantId);
     }
+
+    /**
+     * Renames a Folder in place - a single-row update (ADR 0003/0004). Duplicate sibling names
+     * stay legal (ADR 0003), so no uniqueness check is performed.
+     *
+     * @throws IllegalArgumentException if {@code tenantId}, {@code actor}, or {@code folderId} is
+     *     missing, {@code name} is missing/blank, or no Folder with {@code folderId} exists for
+     *     this Tenant
+     */
+    public Folder rename(TenantId tenantId, Actor actor, UUID folderId, String name) {
+        if (tenantId == null) {
+            throw new IllegalArgumentException("tenantId must not be null");
+        }
+        if (actor == null) {
+            throw new IllegalArgumentException("actor must not be null");
+        }
+        if (folderId == null) {
+            throw new IllegalArgumentException("folderId must not be null");
+        }
+        if (name == null || name.isBlank()) {
+            throw new IllegalArgumentException("name must not be null or blank");
+        }
+        Folder folder = folderLookup.findByIdForTenant(folderId, tenantId);
+        if (folder == null) {
+            throw new IllegalArgumentException("No Folder with id " + folderId + " exists for this Tenant");
+        }
+        folder.rename(name, actor, Instant.now());
+        return folderLookup.save(folder);
+    }
+
+    /**
+     * Moves a Folder to a different parent, or to top-level - a single-row update (ADR 0003/0004).
+     *
+     * @param parentFolderId the new parent Folder's id, or {@code null} to move to top-level
+     * @throws IllegalArgumentException if {@code tenantId}, {@code actor}, or {@code folderId} is
+     *     missing; {@code parentFolderId} equals {@code folderId} (a Folder can't be its own
+     *     parent - ADR 0003's ancestor-trashed check walks the parent chain, and a
+     *     self-referencing row never terminates that walk); no Folder with {@code folderId}
+     *     exists for this Tenant; or {@code parentFolderId} is non-null and no Folder with that
+     *     id exists for this Tenant
+     */
+    public Folder move(TenantId tenantId, Actor actor, UUID folderId, UUID parentFolderId) {
+        if (tenantId == null) {
+            throw new IllegalArgumentException("tenantId must not be null");
+        }
+        if (actor == null) {
+            throw new IllegalArgumentException("actor must not be null");
+        }
+        if (folderId == null) {
+            throw new IllegalArgumentException("folderId must not be null");
+        }
+        if (folderId.equals(parentFolderId)) {
+            throw new IllegalArgumentException("A Folder cannot be moved into itself");
+        }
+        Folder folder = folderLookup.findByIdForTenant(folderId, tenantId);
+        if (folder == null) {
+            throw new IllegalArgumentException("No Folder with id " + folderId + " exists for this Tenant");
+        }
+        if (parentFolderId != null && folderLookup.findByIdForTenant(parentFolderId, tenantId) == null) {
+            throw new IllegalArgumentException(
+                    "No Folder with id " + parentFolderId + " exists for this Tenant");
+        }
+        folder.moveTo(parentFolderId, actor, Instant.now());
+        return folderLookup.save(folder);
+    }
 }

@@ -102,6 +102,27 @@ public class Folder {
         this.lastModifiedBy = actor.id();
     }
 
+    /**
+     * Renames this Folder in place - a single-row update, per ADR 0003/0004. No uniqueness check
+     * against sibling names (ADR 0003: duplicate sibling names are legal).
+     */
+    void rename(String name, Actor actor, Instant now) {
+        this.name = name;
+        this.updatedAt = now;
+        this.lastModifiedBy = actor.id();
+    }
+
+    /**
+     * Re-parents this Folder in place - a single-row update, per ADR 0003/0004.
+     *
+     * @param parentFolderId the new parent Folder's id, or {@code null} to move to top-level
+     */
+    void moveTo(UUID parentFolderId, Actor actor, Instant now) {
+        this.parentFolderId = parentFolderId;
+        this.updatedAt = now;
+        this.lastModifiedBy = actor.id();
+    }
+
     public TenantId tenantId() {
         return new TenantId(tenantId);
     }
