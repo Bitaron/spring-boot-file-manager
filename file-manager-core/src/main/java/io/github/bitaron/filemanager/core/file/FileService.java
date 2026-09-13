@@ -114,9 +114,51 @@ public class FileService {
      * pushing that null-check onto every caller (a deliberate, one-off deviation from
      * {@code fetch}'s convention - not a mix of styles within this method itself).
      *
-     * @throws FileNotFoundException if no File with {@code fileId} exists for this Tenant
+     * <p>This is the Secure Access path (see the glossary in {@code CONTEXT.md}): a {@code PUBLIC}
+     * File is never served through it - {@code CONTEXT.md}'s "a Public File is never fetched via a
+     * Secure Access call" - so it 404s exactly as if the File didn't exist, rather than leaking
+     * that a Public File exists under this id via a different error. Non-secure Access instead goes
+     * through {@link #fetchContentForNonSecureAccess}.
+     *
+     * @throws FileNotFoundException if no File with {@code fileId} exists for this Tenant, or it
+     *     does but its {@link Visibility} is {@code PUBLIC}
      */
     public FileContent fetchContent(TenantId tenantId, UUID fileId) {
+        if (tenantId == null) {
+            throw new IllegalArgumentException("tenantId must not be null");
+        }
+        if (fileId == null) {
+            throw new IllegalArgumentException("fileId must not be null");
+        }
+        File file = fileLookup.findByIdForTenant(fileId, tenantId);
+        if (file == null) {
+            throw new FileNotFoundException("No File with id " + fileId + " exists for this Tenant");
+        }
+        if (file.getVisibility() == Visibility.PUBLIC) {
+            throw new FileNotFoundException("No File with id " + fileId + " exists for this Tenant");
+        }
+        InputStream content = storageBackend.retrieve(file.getStorageReference());
+        return new FileContent(file, content);
+    }
+
+    /**
+     * Fetches a File's metadata together with a live content stream from the configured
+     * {@link StorageBackend}, scoped to {@code tenantId} - <b>without</b> the Secure Access
+     * Visibility gate {@link #fetchContent} enforces.
+     *
+     * <p>This exists solely for Non-secure Access (AccessToken redemption, see the glossary in
+     * {@code CONTEXT.md}): by the time {@code core.accesstoken.AccessTokenService#redeem} calls
+     * this method, it has already independently proven both that the File is {@code Public}
+     * (checked once, at mint time) and that a live, non-expired AccessToken exists for it - so
+     * gating on Visibility again here would be redundant, not protective. This method must not be
+     * called from anywhere else: doing so would silently reopen Secure Access's Visibility gate for
+     * that caller. {@code core.accesstoken} is a different package from {@code core.file}, so this
+     * method must be {@code public} - the name and this javadoc are how its narrow, single intended
+     * caller is documented, since Java can't narrow the access modifier itself.
+     *
+     * @throws FileNotFoundException if no File with {@code fileId} exists for this Tenant
+     */
+    public FileContent fetchContentForNonSecureAccess(TenantId tenantId, UUID fileId) {
         if (tenantId == null) {
             throw new IllegalArgumentException("tenantId must not be null");
         }
