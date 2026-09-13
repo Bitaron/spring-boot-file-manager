@@ -10,7 +10,7 @@ import jakarta.persistence.EntityManager;
  * rules (decision: file-manager-core's persistence seam is a plain {@link EntityManager}, no
  * Spring Data repository - docs/architecture.md).
  */
-class FolderDao {
+class FolderDao implements FolderLookup {
 
     private final EntityManager entityManager;
 
@@ -18,7 +18,8 @@ class FolderDao {
         this.entityManager = entityManager;
     }
 
-    Folder save(Folder folder) {
+    @Override
+    public Folder save(Folder folder) {
         entityManager.persist(folder);
         return folder;
     }
@@ -28,7 +29,8 @@ class FolderDao {
      * Tenant is treated as not found (every cross-Tenant lookup must be Tenant-scoped, per
      * docs/java-conventions.md).
      */
-    Folder findByIdForTenant(UUID id, TenantId tenantId) {
+    @Override
+    public Folder findByIdForTenant(UUID id, TenantId tenantId) {
         Folder folder = entityManager.find(Folder.class, id);
         if (folder == null || !folder.tenantId().equals(tenantId)) {
             return null;
