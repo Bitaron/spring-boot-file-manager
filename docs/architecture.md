@@ -15,7 +15,9 @@ file-manager/
 ├── file-manager-spring-boot-starter/  # autoconfigure for Embedded Mode
 ├── file-manager-service/        # Standalone Service: REST API + Swagger, depends
 │                                 #   on core + starter
-└── file-manager-test-support/   # shared fixtures/builders for unit + integration tests
+├── file-manager-test-support/   # shared fixtures/builders for unit + integration tests
+└── file-manager-usage-example/  # runnable Embedded Mode reference app (issue #66) - a leaf,
+                                  #   depended on by nothing, depending on nothing but the starter
 ```
 
 Add a new `file-manager-storage-*` module for each new backend rather than branching inside one module — this is what keeps StorageBackend swappable.

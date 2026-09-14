@@ -1,0 +1,12 @@
+# No spring.datasource.* here: with the h2 driver on the classpath and no url configured,
+# Spring Boot's DataSourceAutoConfiguration auto-provisions an embedded in-memory H2 database
+# purely from the driver's presence (the same zero-config convenience file-manager-service and
+# file-manager-spring-boot-starter's own tests rely on) - this module makes no production
+# database choice, matching docs/library-usage.md's "a single DataSource bean - nothing else".
+file-manager:
+  storage:
+    backend: local
+    local:
+      # A throwaway directory under the OS temp dir, not inside the repo - re-running this app
+      # never leaves stray files behind for you to clean up or accidentally commit.
+      root-directory: ${java.io.tmpdir}/file-manager-usage-example
