@@ -27,6 +27,18 @@ class FileDao implements FileLookup {
     }
 
     /**
+     * Permanently deletes this File's row (issue #38: Purge). {@code entityManager.remove} requires
+     * a managed entity; {@code file} here is always the very instance {@link #findByIdForTenant}
+     * handed back from this same {@code entityManager}'s persistence context (the only path
+     * {@link FileService#purge} takes to obtain it), so it is already managed and can be removed
+     * directly - no {@code contains}/{@code merge} dance needed.
+     */
+    @Override
+    public void delete(File file) {
+        entityManager.remove(file);
+    }
+
+    /**
      * Looks up a File by id, scoped to {@code tenantId} - a File belonging to a different Tenant
      * is treated as not found (every cross-Tenant lookup must be Tenant-scoped, per
      * docs/java-conventions.md).
@@ -84,6 +96,23 @@ class FileDao implements FileLookup {
             query.setParameter("afterId", afterId);
         }
         query.setMaxResults(limit);
+        return query.getResultList();
+    }
+
+    /**
+     * Same shape as {@link #findByParentFolderForTenant(UUID, TenantId)}, minus its
+     * {@code trashedAt IS NULL} predicate (issue #38: {@code FileService#purgeAllInFolder} must
+     * purge every File under a Folder regardless of that File's own trashed state), mirroring
+     * {@code FolderDao#findAllChildrenForTenant}.
+     */
+    @Override
+    public List<File> findAllByParentFolderForTenant(UUID parentFolderId, TenantId tenantId) {
+        TypedQuery<File> query = entityManager.createQuery(
+                "SELECT f FROM File f WHERE f.tenantId = :tenantId AND f.parentFolderId = :parentFolderId "
+                        + "ORDER BY f.createdAt",
+                File.class);
+        query.setParameter("tenantId", tenantId.id());
+        query.setParameter("parentFolderId", parentFolderId);
         return query.getResultList();
     }
 

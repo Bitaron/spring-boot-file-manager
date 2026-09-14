@@ -440,6 +440,67 @@ class FileControllerIntegrationTest {
         assertThat(response.getBody().getStatus()).isEqualTo(404);
     }
 
+    @Test
+    void purgeEndpointDeletesATrashedFileAndReturns204() {
+        String secret = seedApiKey(new TenantId(UUID.randomUUID()), false);
+        FolderResponse folder = createFolder(secret, "Invoices");
+        FileResponse uploaded = upload(secret, folder.id(), "invoice.txt", null,
+                "invoice content".getBytes(StandardCharsets.UTF_8), "text/plain");
+        trash(secret, uploaded.id());
+
+        ResponseEntity<Void> purgeResponse = restTemplate.exchange(
+                "/api/v1/files/" + uploaded.id(),
+                HttpMethod.DELETE,
+                new HttpEntity<>(authHeaders(secret)),
+                Void.class);
+
+        assertThat(purgeResponse.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+
+        ResponseEntity<ProblemDetail> fetchResponse = restTemplate.exchange(
+                "/api/v1/files/" + uploaded.id(),
+                HttpMethod.GET,
+                new HttpEntity<>(authHeaders(secret)),
+                ProblemDetail.class);
+        assertThat(fetchResponse.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    void purgingAFileThatIsntTrashedReturns400() {
+        String secret = seedApiKey(new TenantId(UUID.randomUUID()), false);
+        FolderResponse folder = createFolder(secret, "Invoices");
+        FileResponse uploaded = upload(secret, folder.id(), "invoice.txt", null,
+                "invoice content".getBytes(StandardCharsets.UTF_8), "text/plain");
+
+        ResponseEntity<ProblemDetail> response = restTemplate.exchange(
+                "/api/v1/files/" + uploaded.id(),
+                HttpMethod.DELETE,
+                new HttpEntity<>(authHeaders(secret)),
+                ProblemDetail.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    void purgingANonexistentFileReturns404() {
+        String secret = seedApiKey(new TenantId(UUID.randomUUID()), false);
+
+        ResponseEntity<ProblemDetail> response = restTemplate.exchange(
+                "/api/v1/files/" + UUID.randomUUID(),
+                HttpMethod.DELETE,
+                new HttpEntity<>(authHeaders(secret)),
+                ProblemDetail.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    private void trash(String secret, UUID fileId) {
+        restTemplate.exchange(
+                "/api/v1/files/" + fileId + "/trash",
+                HttpMethod.POST,
+                new HttpEntity<>(authHeaders(secret)),
+                FileResponse.class);
+    }
+
     private FolderResponse createFolder(String secret, String name) {
         ResponseEntity<FolderResponse> response = restTemplate.exchange(
                 "/api/v1/folders",

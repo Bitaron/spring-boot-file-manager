@@ -32,6 +32,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -191,6 +192,19 @@ class FileController {
                     + "state is cleared - independent of its parent Folder's.")
     FileResponse restore(@PathVariable UUID id, TenantId tenantId, Actor actor) {
         return FileMapper.toResponse(fileService.restore(tenantId, actor, id));
+    }
+
+    @DeleteMapping("/{id}")
+    @Transactional
+    @Operation(
+            summary = "Purge a trashed File",
+            description = "The only way a File's content and metadata row are ever permanently "
+                    + "removed (ADR 0004, decision #7: no background job). Requires the File to "
+                    + "already be explicitly trashed - purging one that isn't is rejected with a "
+                    + "400.")
+    ResponseEntity<Void> purge(@PathVariable UUID id, TenantId tenantId) {
+        fileService.purge(tenantId, id);
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/{id}/access-tokens")

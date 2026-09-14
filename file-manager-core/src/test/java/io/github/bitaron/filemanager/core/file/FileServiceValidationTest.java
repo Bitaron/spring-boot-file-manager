@@ -341,6 +341,27 @@ class FileServiceValidationTest {
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
+    /**
+     * Unlike {@code trash}/{@code restore}, {@code purge} (issue #38) takes no {@code actor} -
+     * purging permanently removes the row, so there is nothing left to attribute the action to
+     * afterwards.
+     */
+    @Test
+    void rejectsPurgeWithNullTenantId() {
+        UUID fileId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> fileService.purge(null, fileId))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void rejectsPurgeWithNullFileId() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+
+        assertThatThrownBy(() -> fileService.purge(tenantId, null))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
     private static InputStream emptyContent() {
         return new ByteArrayInputStream("".getBytes(StandardCharsets.UTF_8));
     }
@@ -350,6 +371,11 @@ class FileServiceValidationTest {
         return new FileLookup() {
             @Override
             public File save(File file) {
+                throw new AssertionError("A guard-clause rejection must never reach the DAO");
+            }
+
+            @Override
+            public void delete(File file) {
                 throw new AssertionError("A guard-clause rejection must never reach the DAO");
             }
 
@@ -366,6 +392,11 @@ class FileServiceValidationTest {
             @Override
             public List<File> findByParentFolderForTenant(
                     UUID parentFolderId, TenantId tenantId, UUID afterId, int limit) {
+                throw new AssertionError("A guard-clause rejection must never reach the DAO");
+            }
+
+            @Override
+            public List<File> findAllByParentFolderForTenant(UUID parentFolderId, TenantId tenantId) {
                 throw new AssertionError("A guard-clause rejection must never reach the DAO");
             }
 

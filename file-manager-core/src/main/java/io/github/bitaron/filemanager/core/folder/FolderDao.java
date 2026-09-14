@@ -27,6 +27,17 @@ class FolderDao implements FolderLookup {
     }
 
     /**
+     * Permanently deletes this Folder's row (issue #38: Purge). Mirrors {@code FileDao#delete}:
+     * {@code folder} is always the very instance {@link #findByIdForTenant} handed back from this
+     * same {@code entityManager}'s persistence context, so it is already managed and can be
+     * removed directly - no {@code contains}/{@code merge} dance needed.
+     */
+    @Override
+    public void delete(Folder folder) {
+        entityManager.remove(folder);
+    }
+
+    /**
      * Looks up a Folder by id, scoped to {@code tenantId} - a Folder belonging to a different
      * Tenant is treated as not found (every cross-Tenant lookup must be Tenant-scoped, per
      * docs/java-conventions.md).
@@ -88,6 +99,24 @@ class FolderDao implements FolderLookup {
             query.setParameter("afterId", afterId);
         }
         query.setMaxResults(limit);
+        return query.getResultList();
+    }
+
+    /**
+     * Same shape as {@link #findChildrenForTenant(UUID, TenantId)}, minus its
+     * {@code trashedAt IS NULL} predicate (issue #38: the Purge cascade walk must reach a
+     * descendant even if only an ancestor - not that descendant itself - is trashed).
+     */
+    @Override
+    public List<Folder> findAllChildrenForTenant(UUID parentFolderId, TenantId tenantId) {
+        String jpql = "SELECT f FROM Folder f WHERE f.tenantId = :tenantId AND f.parentFolderId "
+                + (parentFolderId == null ? "IS NULL" : "= :parentFolderId")
+                + " ORDER BY f.createdAt";
+        TypedQuery<Folder> query = entityManager.createQuery(jpql, Folder.class);
+        query.setParameter("tenantId", tenantId.id());
+        if (parentFolderId != null) {
+            query.setParameter("parentFolderId", parentFolderId);
+        }
         return query.getResultList();
     }
 

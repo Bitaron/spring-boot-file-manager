@@ -17,6 +17,7 @@ import io.github.bitaron.filemanager.core.folder.Folder;
 import io.github.bitaron.filemanager.core.folder.FolderNotFoundException;
 import io.github.bitaron.filemanager.core.folder.FolderService;
 import io.github.bitaron.filemanager.core.tenant.TenantId;
+import io.github.bitaron.filemanager.core.trash.TrashService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -25,6 +26,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -46,6 +48,9 @@ import tools.jackson.databind.JsonNode;
  * the transaction boundary") - here, this controller is that caller, so every mutating endpoint
  * is {@code @Transactional}. Read endpoints don't need it: {@code spring.jpa.open-in-view}
  * (Spring Boot's default) already binds a per-request {@code EntityManager} sufficient for reads.
+ *
+ * <p>Constructor params: {@link FolderService} (eager - always available), {@link FileService}
+ * ({@code @Lazy}) and {@link TrashService} ({@code @Lazy}), the latter two both explained below.
  */
 @RestController
 @RequestMapping("/api/v1/folders")
@@ -57,6 +62,7 @@ class FolderController {
 
     private final FolderService folderService;
     private final FileService fileService;
+    private final TrashService trashService;
 
     /**
      * {@code @Lazy} here (not just on {@code FilePersistenceAutoConfiguration.fileService}'s own
@@ -69,10 +75,20 @@ class FolderController {
      * first tried without it. {@code @Lazy} on this injection point makes Spring hand this
      * controller a lazy proxy instead, deferring real {@link FileService} creation to the first
      * actual File request. Mirrors {@link FileController}'s constructor exactly.
+     *
+     * <p>{@link TrashService} is {@code @Lazy} for the same reason (mirrors {@code
+     * TrashController}'s own {@code @Lazy TrashService} injection): {@link TrashService} composes
+     * {@link FolderService} and {@code core.file.FileService}, and {@code FileService} itself
+     * transitively needs a {@code StorageBackend} - a plain constructor-injected
+     * {@link TrashService} would force Spring to eagerly resolve that whole chain the moment this
+     * singleton controller is created during context refresh, defeating the producer-side
+     * {@code @Lazy} ({@code TrashAutoConfiguration.trashService}) in hosts that never configured a
+     * {@code StorageBackend}.
      */
-    FolderController(FolderService folderService, @Lazy FileService fileService) {
+    FolderController(FolderService folderService, @Lazy FileService fileService, @Lazy TrashService trashService) {
         this.folderService = folderService;
         this.fileService = fileService;
+        this.trashService = trashService;
     }
 
     @PostMapping
@@ -184,6 +200,21 @@ class FolderController {
                     + "trashed state is cleared - independent of any ancestor's or descendant's.")
     FolderResponse restore(@PathVariable UUID id, TenantId tenantId, Actor actor) {
         return FolderMapper.toResponse(folderService.restore(tenantId, actor, id));
+    }
+
+    @DeleteMapping("/{id}")
+    @Transactional
+    @Operation(
+            summary = "Purge a trashed Folder",
+            description = "The only way a Folder's descendants are ever permanently removed (ADR "
+                    + "0004, decision #7: no background job). Cascades to every descendant Folder "
+                    + "and File - their metadata rows are deleted and every descendant File's "
+                    + "StorageBackend content is deleted too (decision #16), regardless of each "
+                    + "descendant's own trashed state. Requires the root Folder to already be "
+                    + "explicitly trashed - purging one that isn't is rejected with a 400.")
+    ResponseEntity<Void> purge(@PathVariable UUID id, TenantId tenantId) {
+        trashService.purge(tenantId, id);
+        return ResponseEntity.noContent().build();
     }
 
     private Folder fetchOrThrow(TenantId tenantId, UUID folderId) {
