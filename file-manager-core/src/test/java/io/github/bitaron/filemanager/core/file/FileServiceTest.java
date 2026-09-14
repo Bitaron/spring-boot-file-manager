@@ -294,6 +294,301 @@ class FileServiceTest {
                 .isInstanceOf(FileNotFoundException.class);
     }
 
+    @Test
+    void trashSetsTheFilesOwnTrashedAtAndTrashedBy() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor creator = new Actor(UUID.randomUUID());
+        Actor trasher = new Actor(UUID.randomUUID());
+        File existing = new File(UUID.randomUUID(), tenantId, UUID.randomUUID(), "invoice.pdf", 11,
+                "application/pdf", Visibility.PRIVATE, "some/reference", creator, Instant.now());
+
+        FakeFileLookup fileLookup = new FakeFileLookup();
+        fileLookup.byId.put(existing.getId(), existing);
+        FileService fileService = new FileService(fileLookup, folderService, new FakeStorageBackend());
+
+        File trashed = fileService.trash(tenantId, trasher, existing.getId());
+
+        assertThat(trashed.getTrashedAt()).isNotNull();
+        assertThat(trashed.trashedBy()).isEqualTo(trasher);
+        assertThat(fileLookup.saved).isSameAs(existing);
+    }
+
+    /**
+     * Trashing an already-trashed File must be a full no-op (issue #37, mirroring
+     * {@code FolderServiceTest#trashingAnAlreadyTrashedFolderIsANoOp}): the second call, made by a
+     * different Actor, must not overwrite the first call's {@code trashedAt}/{@code trashedBy}, nor
+     * bump {@code updatedAt}/{@code lastModifiedBy}.
+     */
+    @Test
+    void trashingAnAlreadyTrashedFileIsANoOp() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor creator = new Actor(UUID.randomUUID());
+        Actor firstTrasher = new Actor(UUID.randomUUID());
+        Actor secondTrasher = new Actor(UUID.randomUUID());
+        File existing = new File(UUID.randomUUID(), tenantId, UUID.randomUUID(), "invoice.pdf", 11,
+                "application/pdf", Visibility.PRIVATE, "some/reference", creator, Instant.now());
+
+        FakeFileLookup fileLookup = new FakeFileLookup();
+        fileLookup.byId.put(existing.getId(), existing);
+        FileService fileService = new FileService(fileLookup, folderService, new FakeStorageBackend());
+
+        fileService.trash(tenantId, firstTrasher, existing.getId());
+        Instant trashedAtAfterFirstTrash = existing.getTrashedAt();
+        Instant updatedAtAfterFirstTrash = existing.getUpdatedAt();
+        Actor lastModifiedByAfterFirstTrash = existing.lastModifiedBy();
+
+        File afterSecondTrash = fileService.trash(tenantId, secondTrasher, existing.getId());
+
+        assertThat(afterSecondTrash.getTrashedAt()).isEqualTo(trashedAtAfterFirstTrash);
+        assertThat(afterSecondTrash.trashedBy()).isEqualTo(firstTrasher);
+        assertThat(afterSecondTrash.getUpdatedAt()).isEqualTo(updatedAtAfterFirstTrash);
+        assertThat(afterSecondTrash.lastModifiedBy()).isEqualTo(lastModifiedByAfterFirstTrash);
+    }
+
+    @Test
+    void restoreClearsTheFilesOwnTrashedState() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor creator = new Actor(UUID.randomUUID());
+        Actor trasher = new Actor(UUID.randomUUID());
+        Actor restorer = new Actor(UUID.randomUUID());
+        File existing = new File(UUID.randomUUID(), tenantId, UUID.randomUUID(), "invoice.pdf", 11,
+                "application/pdf", Visibility.PRIVATE, "some/reference", creator, Instant.now());
+
+        FakeFileLookup fileLookup = new FakeFileLookup();
+        fileLookup.byId.put(existing.getId(), existing);
+        FileService fileService = new FileService(fileLookup, folderService, new FakeStorageBackend());
+
+        fileService.trash(tenantId, trasher, existing.getId());
+        File restored = fileService.restore(tenantId, restorer, existing.getId());
+
+        assertThat(restored.getTrashedAt()).isNull();
+        assertThat(restored.trashedBy()).isNull();
+    }
+
+    /**
+     * Restoring an already-active (never-trashed) File must be a full no-op (issue #37, symmetric
+     * with {@link #trashingAnAlreadyTrashedFileIsANoOp}): nothing changes, including
+     * {@code updatedAt}/{@code lastModifiedBy}.
+     */
+    @Test
+    void restoringAnAlreadyActiveFileIsANoOp() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor creator = new Actor(UUID.randomUUID());
+        Actor restorer = new Actor(UUID.randomUUID());
+        File existing = new File(UUID.randomUUID(), tenantId, UUID.randomUUID(), "invoice.pdf", 11,
+                "application/pdf", Visibility.PRIVATE, "some/reference", creator, Instant.now());
+
+        FakeFileLookup fileLookup = new FakeFileLookup();
+        fileLookup.byId.put(existing.getId(), existing);
+        FileService fileService = new FileService(fileLookup, folderService, new FakeStorageBackend());
+        Instant updatedAtBeforeRestore = existing.getUpdatedAt();
+        Actor lastModifiedByBeforeRestore = existing.lastModifiedBy();
+
+        File afterRestore = fileService.restore(tenantId, restorer, existing.getId());
+
+        assertThat(afterRestore.getTrashedAt()).isNull();
+        assertThat(afterRestore.trashedBy()).isNull();
+        assertThat(afterRestore.getUpdatedAt()).isEqualTo(updatedAtBeforeRestore);
+        assertThat(afterRestore.lastModifiedBy()).isEqualTo(lastModifiedByBeforeRestore);
+    }
+
+    @Test
+    void trashOfANonExistentFileThrowsFileNotFoundException() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+        FakeFileLookup fileLookup = new FakeFileLookup();
+        FileService fileService = new FileService(fileLookup, folderService, new FakeStorageBackend());
+
+        assertThatThrownBy(() -> fileService.trash(tenantId, actor, UUID.randomUUID()))
+                .isInstanceOf(FileNotFoundException.class);
+    }
+
+    @Test
+    void restoreOfANonExistentFileThrowsFileNotFoundException() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+        FakeFileLookup fileLookup = new FakeFileLookup();
+        FileService fileService = new FileService(fileLookup, folderService, new FakeStorageBackend());
+
+        assertThatThrownBy(() -> fileService.restore(tenantId, actor, UUID.randomUUID()))
+                .isInstanceOf(FileNotFoundException.class);
+    }
+
+    /**
+     * Ordinary listings silently exclude trashed items, no filter flag needed (issue #37, ADR
+     * 0004) - the cheap, per-row half of the exclusion rule, mirroring
+     * {@code FolderServiceTest#listChildrenExcludesAChildWithItsOwnTrashedAtSet}: a File's own
+     * {@code trashedAt} being set is enough to exclude it, with no ancestor walk needed.
+     */
+    @Test
+    void listFilesExcludesAFileWithItsOwnTrashedAtSet() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+        UUID parentFolderId = UUID.randomUUID();
+        File trashedFile = new File(UUID.randomUUID(), tenantId, parentFolderId, "Old Draft.pdf", 11,
+                "application/pdf", Visibility.PRIVATE, "some/reference", actor, Instant.now());
+        File activeFile = new File(UUID.randomUUID(), tenantId, parentFolderId, "Final.pdf", 11,
+                "application/pdf", Visibility.PRIVATE, "some/reference", actor, Instant.now());
+
+        FakeFileLookup fileLookup = new FakeFileLookup();
+        fileLookup.byId.put(trashedFile.getId(), trashedFile);
+        fileLookup.byId.put(activeFile.getId(), activeFile);
+        FileService fileService = new FileService(fileLookup, folderService, new FakeStorageBackend());
+
+        fileService.trash(tenantId, actor, trashedFile.getId());
+
+        List<File> files = fileService.listFiles(tenantId, parentFolderId);
+
+        assertThat(files).extracting(File::getId).containsExactly(activeFile.getId());
+    }
+
+    /**
+     * Trashing a Folder makes every File beneath it disappear from ordinary listings, with no
+     * bulk write across those Files (issue #37, decision #16) - mirroring
+     * {@code FolderServiceTest#listChildrenReturnsEmptyWhenTheParentItselfIsTrashed}: listing a
+     * trashed Folder's own Files returns empty because the Folder itself is effectively trashed,
+     * even though the File row's own {@code trashedAt} was never touched.
+     */
+    @Test
+    void listFilesReturnsEmptyWhenTheParentFolderItselfIsTrashed() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+
+        entityManager.getTransaction().begin();
+        Folder parent = folderService.create(tenantId, actor, "Quarterly Reports", null);
+        entityManager.getTransaction().commit();
+
+        File file = new File(UUID.randomUUID(), tenantId, parent.getId(), "Invoice.pdf", 11,
+                "application/pdf", Visibility.PRIVATE, "some/reference", actor, Instant.now());
+        FakeFileLookup fileLookup = new FakeFileLookup();
+        fileLookup.byId.put(file.getId(), file);
+        FileService fileService = new FileService(fileLookup, folderService, new FakeStorageBackend());
+
+        entityManager.getTransaction().begin();
+        folderService.trash(tenantId, actor, parent.getId());
+        entityManager.getTransaction().commit();
+
+        entityManager.clear();
+        List<File> files = fileService.listFiles(tenantId, parent.getId());
+
+        assertThat(files).isEmpty();
+
+        // No bulk write across Files: the File's own row must be untouched by trashing its parent.
+        assertThat(file.getTrashedAt()).isNull();
+    }
+
+    /**
+     * The "effectively trashed" walk goes beyond the immediate parent (issue #37, decision #16) -
+     * mirroring {@code FolderServiceTest#listChildrenReturnsEmptyWhenAnAncestorBeyondTheImmediateParentIsTrashed}:
+     * in a hierarchy A -&gt; B, with a File filed directly under B, trashing A must still empty out
+     * B's own File listing, proving the walk doesn't stop after one hop up from the File's direct
+     * parent.
+     */
+    @Test
+    void listFilesReturnsEmptyWhenAnAncestorBeyondTheImmediateParentIsTrashed() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+
+        entityManager.getTransaction().begin();
+        Folder a = folderService.create(tenantId, actor, "A", null);
+        Folder b = folderService.create(tenantId, actor, "B", a.getId());
+        entityManager.getTransaction().commit();
+
+        File file = new File(UUID.randomUUID(), tenantId, b.getId(), "Invoice.pdf", 11,
+                "application/pdf", Visibility.PRIVATE, "some/reference", actor, Instant.now());
+        FakeFileLookup fileLookup = new FakeFileLookup();
+        fileLookup.byId.put(file.getId(), file);
+        FileService fileService = new FileService(fileLookup, folderService, new FakeStorageBackend());
+
+        entityManager.getTransaction().begin();
+        folderService.trash(tenantId, actor, a.getId());
+        entityManager.getTransaction().commit();
+
+        entityManager.clear();
+        List<File> filesUnderB = fileService.listFiles(tenantId, b.getId());
+
+        assertThat(filesUnderB).isEmpty();
+    }
+
+    /**
+     * {@code listTrashed} is the trash bin's own query (issue #37), mirroring
+     * {@code FolderServiceTest#listTrashedScopedToParentReturnsOnlyDirectChildrenWithTheirOwnTrashedAtSet}:
+     * unlike {@code listFiles}'s exclusion rule, it returns only Files with their own
+     * {@code trashedAt} set, scoped to direct children of a given parent - an untrashed sibling,
+     * and a File trashed under a completely different parent Folder, are both noise this list
+     * must exclude.
+     */
+    @Test
+    void listTrashedScopedToParentReturnsOnlyDirectChildrenWithTheirOwnTrashedAtSet() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+
+        entityManager.getTransaction().begin();
+        Folder parent = folderService.create(tenantId, actor, "Quarterly Reports", null);
+        Folder otherParent = folderService.create(tenantId, actor, "Unrelated Parent", null);
+        entityManager.getTransaction().commit();
+
+        File trashedFile = new File(UUID.randomUUID(), tenantId, parent.getId(), "Old Draft.pdf", 11,
+                "application/pdf", Visibility.PRIVATE, "some/reference", actor, Instant.now());
+        File activeFile = new File(UUID.randomUUID(), tenantId, parent.getId(), "Final.pdf", 11,
+                "application/pdf", Visibility.PRIVATE, "some/reference", actor, Instant.now());
+        File trashedUnderOtherParent = new File(UUID.randomUUID(), tenantId, otherParent.getId(),
+                "Old Draft Elsewhere.pdf", 11, "application/pdf", Visibility.PRIVATE, "some/reference",
+                actor, Instant.now());
+
+        FakeFileLookup fileLookup = new FakeFileLookup();
+        fileLookup.byId.put(trashedFile.getId(), trashedFile);
+        fileLookup.byId.put(activeFile.getId(), activeFile);
+        fileLookup.byId.put(trashedUnderOtherParent.getId(), trashedUnderOtherParent);
+        FileService fileService = new FileService(fileLookup, folderService, new FakeStorageBackend());
+
+        fileService.trash(tenantId, actor, trashedFile.getId());
+        fileService.trash(tenantId, actor, trashedUnderOtherParent.getId());
+
+        List<File> trashed = fileService.listTrashed(tenantId, parent.getId());
+
+        assertThat(trashed).extracting(File::getId).containsExactly(trashedFile.getId());
+    }
+
+    /**
+     * With no {@code parentFolderId}, {@code listTrashed} is a flat, tenant-wide scan (issue #37),
+     * mirroring
+     * {@code FolderServiceTest#listTrashedWithNullParentReturnsEveryTrashedFolderTenantWideRegardlessOfNestingDepth}
+     * - it finds every explicitly-trashed File regardless of which Folder it's parented under,
+     * with no parent filter applied at all.
+     */
+    @Test
+    void listTrashedWithNullParentReturnsEveryTrashedFileTenantWideRegardlessOfParent() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+
+        entityManager.getTransaction().begin();
+        Folder parentOne = folderService.create(tenantId, actor, "Quarterly Reports", null);
+        Folder parentTwo = folderService.create(tenantId, actor, "Invoices", null);
+        entityManager.getTransaction().commit();
+
+        File trashedInParentOne = new File(UUID.randomUUID(), tenantId, parentOne.getId(), "Old Draft.pdf", 11,
+                "application/pdf", Visibility.PRIVATE, "some/reference", actor, Instant.now());
+        File trashedInParentTwo = new File(UUID.randomUUID(), tenantId, parentTwo.getId(), "Old Invoice.pdf", 11,
+                "application/pdf", Visibility.PRIVATE, "some/reference", actor, Instant.now());
+        File activeFile = new File(UUID.randomUUID(), tenantId, parentOne.getId(), "Final.pdf", 11,
+                "application/pdf", Visibility.PRIVATE, "some/reference", actor, Instant.now());
+
+        FakeFileLookup fileLookup = new FakeFileLookup();
+        fileLookup.byId.put(trashedInParentOne.getId(), trashedInParentOne);
+        fileLookup.byId.put(trashedInParentTwo.getId(), trashedInParentTwo);
+        fileLookup.byId.put(activeFile.getId(), activeFile);
+        FileService fileService = new FileService(fileLookup, folderService, new FakeStorageBackend());
+
+        fileService.trash(tenantId, actor, trashedInParentOne.getId());
+        fileService.trash(tenantId, actor, trashedInParentTwo.getId());
+
+        List<File> trashed = fileService.listTrashed(tenantId, null);
+
+        assertThat(trashed).extracting(File::getId)
+                .containsExactlyInAnyOrder(trashedInParentOne.getId(), trashedInParentTwo.getId());
+    }
+
     /** Captures what it was asked to save, and answers lookups from a preloaded map. */
     private static final class FakeFileLookup implements FileLookup {
         private final Map<UUID, File> byId = new HashMap<>();
@@ -310,15 +605,38 @@ class FileServiceTest {
             return byId.get(id);
         }
 
+        // Mirrors FileDao#findByParentFolderForTenant's real query exactly: scoped to
+        // parentFolderId, excluding Files with their own trashedAt set (issue #37) - a fake
+        // standing in for a DAO must honor the same contract the DAO does, not diverge from it.
         @Override
         public List<File> findByParentFolderForTenant(UUID parentFolderId, TenantId tenantId) {
-            throw new AssertionError("not expected to be called by upload()/fetch()/fetchContent()");
+            List<File> matching = new java.util.ArrayList<>();
+            for (File file : byId.values()) {
+                if (file.getParentFolderId().equals(parentFolderId) && file.getTrashedAt() == null) {
+                    matching.add(file);
+                }
+            }
+            return matching;
         }
 
         @Override
         public List<File> findByParentFolderForTenant(
                 UUID parentFolderId, TenantId tenantId, UUID afterId, int limit) {
             throw new AssertionError("not expected to be called by upload()/fetch()/fetchContent()");
+        }
+
+        // Mirrors FileDao#findTrashedForTenant's real query exactly: own trashedAt set,
+        // optionally scoped to parentFolderId (issue #37).
+        @Override
+        public List<File> findTrashedForTenant(UUID parentFolderId, TenantId tenantId) {
+            List<File> matching = new java.util.ArrayList<>();
+            for (File file : byId.values()) {
+                if (file.getTrashedAt() != null
+                        && (parentFolderId == null || file.getParentFolderId().equals(parentFolderId))) {
+                    matching.add(file);
+                }
+            }
+            return matching;
         }
     }
 
@@ -351,6 +669,11 @@ class FileServiceTest {
             @Override
             public List<File> findByParentFolderForTenant(
                     UUID parentFolderId, TenantId tenantId, UUID afterId, int limit) {
+                throw new AssertionError("not expected to be called by upload()");
+            }
+
+            @Override
+            public List<File> findTrashedForTenant(UUID parentFolderId, TenantId tenantId) {
                 throw new AssertionError("not expected to be called by upload()");
             }
         };

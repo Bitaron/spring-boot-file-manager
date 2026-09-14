@@ -175,7 +175,11 @@ public class FileService {
     }
 
     /**
-     * Lists a Folder's Files, scoped to {@code tenantId}.
+     * Lists a Folder's Files, scoped to {@code tenantId}. Excludes Files with their own
+     * {@code trashedAt} set, and returns empty entirely if the parent Folder is itself
+     * effectively trashed (issue #37, decision #16 - consulted via {@code folderService}'s own
+     * ancestor walk) - this is what makes every File beneath a trashed Folder disappear from
+     * listings with no per-File write.
      *
      * @param parentFolderId the parent Folder's id - never {@code null}, unlike Folder's own
      *     {@code parentFolderId} (ADR 0003: every File belongs to exactly one Folder)
@@ -184,6 +188,9 @@ public class FileService {
     public List<File> listFiles(TenantId tenantId, UUID parentFolderId) {
         if (tenantId == null) {
             throw new IllegalArgumentException("tenantId must not be null");
+        }
+        if (folderService.isTrashed(tenantId, parentFolderId)) {
+            return List.of();
         }
         return fileLookup.findByParentFolderForTenant(parentFolderId, tenantId);
     }
@@ -194,6 +201,10 @@ public class FileService {
      * already-time-ordered UUIDv7 PK), mirroring {@code FolderService#listChildren(TenantId, UUID,
      * UUID, int)}. Callers ask for one extra row past {@code limit} to learn whether a next page
      * exists, the same convention {@code afterId} feeds back in as the next request's cursor.
+     *
+     * <p>Same trash-exclusion rule as {@link #listFiles(TenantId, UUID)} (issue #37, decision
+     * #16): Files with their own {@code trashedAt} set are excluded, and the page is empty
+     * entirely if the parent Folder is itself effectively trashed.
      *
      * @param parentFolderId the parent Folder's id - never {@code null}
      * @param afterId list Files whose id sorts after this one, or {@code null} to start from the
@@ -208,6 +219,9 @@ public class FileService {
         }
         if (limit <= 0) {
             throw new IllegalArgumentException("limit must be positive");
+        }
+        if (folderService.isTrashed(tenantId, parentFolderId)) {
+            return List.of();
         }
         return fileLookup.findByParentFolderForTenant(parentFolderId, tenantId, afterId, limit);
     }
@@ -279,5 +293,75 @@ public class FileService {
         }
         file.moveTo(parentFolderId, actor, Instant.now());
         return fileLookup.save(file);
+    }
+
+    /**
+     * Trashes a File in place - a single-row update (ADR 0003/0004, decision #16). Mirrors
+     * {@code FolderService#trash} exactly.
+     *
+     * @throws IllegalArgumentException if {@code tenantId}, {@code actor}, or {@code fileId} is
+     *     missing
+     * @throws FileNotFoundException if no File with {@code fileId} exists for this Tenant
+     */
+    public File trash(TenantId tenantId, Actor actor, UUID fileId) {
+        if (tenantId == null) {
+            throw new IllegalArgumentException("tenantId must not be null");
+        }
+        if (actor == null) {
+            throw new IllegalArgumentException("actor must not be null");
+        }
+        if (fileId == null) {
+            throw new IllegalArgumentException("fileId must not be null");
+        }
+        File file = fileLookup.findByIdForTenant(fileId, tenantId);
+        if (file == null) {
+            throw new FileNotFoundException("No File with id " + fileId + " exists for this Tenant");
+        }
+        file.trash(actor, Instant.now());
+        return fileLookup.save(file);
+    }
+
+    /**
+     * Restores a trashed File in place - a single-row update (ADR 0003/0004, decision #16).
+     * Mirrors {@code FolderService#restore} exactly.
+     *
+     * @throws IllegalArgumentException if {@code tenantId}, {@code actor}, or {@code fileId} is
+     *     missing
+     * @throws FileNotFoundException if no File with {@code fileId} exists for this Tenant
+     */
+    public File restore(TenantId tenantId, Actor actor, UUID fileId) {
+        if (tenantId == null) {
+            throw new IllegalArgumentException("tenantId must not be null");
+        }
+        if (actor == null) {
+            throw new IllegalArgumentException("actor must not be null");
+        }
+        if (fileId == null) {
+            throw new IllegalArgumentException("fileId must not be null");
+        }
+        File file = fileLookup.findByIdForTenant(fileId, tenantId);
+        if (file == null) {
+            throw new FileNotFoundException("No File with id " + fileId + " exists for this Tenant");
+        }
+        file.restore(actor, Instant.now());
+        return fileLookup.save(file);
+    }
+
+    /**
+     * The trash bin's own query (issue #37): Files with their own {@code trashedAt} set - mirrors
+     * {@code FolderService#listTrashed} exactly. Unlike {@link #listFiles}'s exclusion rule, this
+     * surfaces only explicitly-trashed items, not the ancestor-computed "effectively trashed"
+     * state.
+     *
+     * @param parentFolderId scope to direct children of this Folder, or {@code null} for a flat,
+     *     tenant-wide scan (every trashed File regardless of which Folder it's parented under, no
+     *     parent filter at all)
+     * @throws IllegalArgumentException if {@code tenantId} is missing
+     */
+    public List<File> listTrashed(TenantId tenantId, UUID parentFolderId) {
+        if (tenantId == null) {
+            throw new IllegalArgumentException("tenantId must not be null");
+        }
+        return fileLookup.findTrashedForTenant(parentFolderId, tenantId);
     }
 }

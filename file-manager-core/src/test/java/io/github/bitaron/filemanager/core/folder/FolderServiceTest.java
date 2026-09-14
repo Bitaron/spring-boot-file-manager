@@ -1,5 +1,6 @@
 package io.github.bitaron.filemanager.core.folder;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -15,6 +16,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
@@ -435,5 +437,365 @@ class FolderServiceTest {
 
         assertThat(children).extracting(Folder::getName)
                 .containsExactlyInAnyOrder("Invoices", "Invoices");
+    }
+
+    @Test
+    void trashSetsTheFoldersOwnTrashedAtAndTrashedBy() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor creator = new Actor(UUID.randomUUID());
+        Actor trasher = new Actor(UUID.randomUUID());
+
+        entityManager.getTransaction().begin();
+        Folder created = folderService.create(tenantId, creator, "Quarterly Reports", null);
+        entityManager.getTransaction().commit();
+
+        entityManager.getTransaction().begin();
+        folderService.trash(tenantId, trasher, created.getId());
+        entityManager.getTransaction().commit();
+
+        entityManager.clear();
+        Folder reloaded = entityManager.find(Folder.class, created.getId());
+
+        assertThat(reloaded.getTrashedAt()).isNotNull();
+        assertThat(reloaded.trashedBy()).isEqualTo(trasher);
+    }
+
+    /**
+     * Trashing an already-trashed Folder must be a full no-op (issue #37): the second call, made
+     * by a different Actor, must not overwrite the first call's {@code trashedAt}/
+     * {@code trashedBy}, nor bump {@code updatedAt}/{@code lastModifiedBy} - a true no-op changes
+     * nothing, including "last modified" bookkeeping, otherwise a client polling
+     * {@code updatedAt} would see a spurious change for a call that changed nothing.
+     */
+    @Test
+    void trashingAnAlreadyTrashedFolderIsANoOp() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor creator = new Actor(UUID.randomUUID());
+        Actor firstTrasher = new Actor(UUID.randomUUID());
+        Actor secondTrasher = new Actor(UUID.randomUUID());
+
+        entityManager.getTransaction().begin();
+        Folder created = folderService.create(tenantId, creator, "Quarterly Reports", null);
+        entityManager.getTransaction().commit();
+
+        entityManager.getTransaction().begin();
+        folderService.trash(tenantId, firstTrasher, created.getId());
+        entityManager.getTransaction().commit();
+
+        entityManager.clear();
+        Folder afterFirstTrash = entityManager.find(Folder.class, created.getId());
+        Instant trashedAtAfterFirstTrash = afterFirstTrash.getTrashedAt();
+        Instant updatedAtAfterFirstTrash = afterFirstTrash.getUpdatedAt();
+        Actor lastModifiedByAfterFirstTrash = afterFirstTrash.lastModifiedBy();
+
+        entityManager.getTransaction().begin();
+        folderService.trash(tenantId, secondTrasher, created.getId());
+        entityManager.getTransaction().commit();
+
+        entityManager.clear();
+        Folder afterSecondTrash = entityManager.find(Folder.class, created.getId());
+
+        assertThat(afterSecondTrash.getTrashedAt()).isEqualTo(trashedAtAfterFirstTrash);
+        assertThat(afterSecondTrash.trashedBy()).isEqualTo(firstTrasher);
+        assertThat(afterSecondTrash.getUpdatedAt()).isEqualTo(updatedAtAfterFirstTrash);
+        assertThat(afterSecondTrash.lastModifiedBy()).isEqualTo(lastModifiedByAfterFirstTrash);
+    }
+
+    @Test
+    void restoreClearsTheFoldersOwnTrashedState() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor creator = new Actor(UUID.randomUUID());
+        Actor trasher = new Actor(UUID.randomUUID());
+        Actor restorer = new Actor(UUID.randomUUID());
+
+        entityManager.getTransaction().begin();
+        Folder created = folderService.create(tenantId, creator, "Quarterly Reports", null);
+        entityManager.getTransaction().commit();
+
+        entityManager.getTransaction().begin();
+        folderService.trash(tenantId, trasher, created.getId());
+        entityManager.getTransaction().commit();
+
+        entityManager.getTransaction().begin();
+        folderService.restore(tenantId, restorer, created.getId());
+        entityManager.getTransaction().commit();
+
+        entityManager.clear();
+        Folder reloaded = entityManager.find(Folder.class, created.getId());
+
+        assertThat(reloaded.getTrashedAt()).isNull();
+        assertThat(reloaded.trashedBy()).isNull();
+    }
+
+    /**
+     * Restoring an already-active (never-trashed) Folder must be a full no-op (issue #37,
+     * symmetric with {@link #trashingAnAlreadyTrashedFolderIsANoOp}): nothing changes, including
+     * {@code updatedAt}/{@code lastModifiedBy} - a client polling {@code updatedAt} shouldn't see
+     * a spurious change for a call that changed nothing.
+     */
+    @Test
+    void restoringAnAlreadyActiveFolderIsANoOp() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor creator = new Actor(UUID.randomUUID());
+        Actor restorer = new Actor(UUID.randomUUID());
+
+        entityManager.getTransaction().begin();
+        Folder created = folderService.create(tenantId, creator, "Quarterly Reports", null);
+        entityManager.getTransaction().commit();
+
+        entityManager.clear();
+        Folder beforeRestore = entityManager.find(Folder.class, created.getId());
+        Instant updatedAtBeforeRestore = beforeRestore.getUpdatedAt();
+        Actor lastModifiedByBeforeRestore = beforeRestore.lastModifiedBy();
+
+        entityManager.getTransaction().begin();
+        folderService.restore(tenantId, restorer, created.getId());
+        entityManager.getTransaction().commit();
+
+        entityManager.clear();
+        Folder afterRestore = entityManager.find(Folder.class, created.getId());
+
+        assertThat(afterRestore.getTrashedAt()).isNull();
+        assertThat(afterRestore.trashedBy()).isNull();
+        assertThat(afterRestore.getUpdatedAt()).isEqualTo(updatedAtBeforeRestore);
+        assertThat(afterRestore.lastModifiedBy()).isEqualTo(lastModifiedByBeforeRestore);
+    }
+
+    @Test
+    void rejectsTrashOfNonexistentFolder() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+        UUID nonexistentFolderId = UUID.randomUUID();
+
+        entityManager.getTransaction().begin();
+        try {
+            assertThatThrownBy(() -> folderService.trash(tenantId, actor, nonexistentFolderId))
+                    .isInstanceOf(FolderNotFoundException.class);
+        } finally {
+            entityManager.getTransaction().rollback();
+        }
+    }
+
+    @Test
+    void rejectsRestoreOfNonexistentFolder() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+        UUID nonexistentFolderId = UUID.randomUUID();
+
+        entityManager.getTransaction().begin();
+        try {
+            assertThatThrownBy(() -> folderService.restore(tenantId, actor, nonexistentFolderId))
+                    .isInstanceOf(FolderNotFoundException.class);
+        } finally {
+            entityManager.getTransaction().rollback();
+        }
+    }
+
+    /**
+     * Ordinary listings silently exclude trashed items, no filter flag needed (issue #37, ADR
+     * 0004) - the cheap, per-row half of the exclusion rule: a child's own {@code trashedAt} being
+     * set is enough to exclude it, with no ancestor walk needed.
+     */
+    @Test
+    void listChildrenExcludesAChildWithItsOwnTrashedAtSet() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+
+        entityManager.getTransaction().begin();
+        Folder parent = folderService.create(tenantId, actor, "Quarterly Reports", null);
+        Folder trashedChild = folderService.create(tenantId, actor, "Old Draft", parent.getId());
+        Folder activeChild = folderService.create(tenantId, actor, "Final", parent.getId());
+        entityManager.getTransaction().commit();
+
+        entityManager.getTransaction().begin();
+        folderService.trash(tenantId, actor, trashedChild.getId());
+        entityManager.getTransaction().commit();
+
+        entityManager.clear();
+        List<Folder> children = folderService.listChildren(tenantId, parent.getId());
+
+        assertThat(children).extracting(Folder::getId).containsExactly(activeChild.getId());
+    }
+
+    /**
+     * Trashing a Folder makes every descendant disappear from ordinary listings, with no bulk
+     * write across descendants (issue #37, decision #16) - listing a trashed Folder's own
+     * children returns empty because the Folder itself is effectively trashed, even though the
+     * child row's own {@code trashedAt} was never touched.
+     */
+    @Test
+    void listChildrenReturnsEmptyWhenTheParentItselfIsTrashed() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+
+        entityManager.getTransaction().begin();
+        Folder parent = folderService.create(tenantId, actor, "Quarterly Reports", null);
+        Folder child = folderService.create(tenantId, actor, "2026 Q1", parent.getId());
+        entityManager.getTransaction().commit();
+
+        entityManager.getTransaction().begin();
+        folderService.trash(tenantId, actor, parent.getId());
+        entityManager.getTransaction().commit();
+
+        entityManager.clear();
+        List<Folder> children = folderService.listChildren(tenantId, parent.getId());
+
+        assertThat(children).isEmpty();
+
+        // No bulk write across descendants: the child's own row must be untouched by trashing
+        // its parent.
+        Folder reloadedChild = entityManager.find(Folder.class, child.getId());
+        assertThat(reloadedChild.getTrashedAt()).isNull();
+    }
+
+    /**
+     * The "effectively trashed" walk goes beyond the immediate parent (issue #37, decision #16):
+     * in a 3-level hierarchy A -&gt; B -&gt; C, trashing A must still empty out B's own child
+     * listing (i.e. C disappears), proving the walk doesn't stop after one hop up from B.
+     */
+    @Test
+    void listChildrenReturnsEmptyWhenAnAncestorBeyondTheImmediateParentIsTrashed() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+
+        entityManager.getTransaction().begin();
+        Folder a = folderService.create(tenantId, actor, "A", null);
+        Folder b = folderService.create(tenantId, actor, "B", a.getId());
+        folderService.create(tenantId, actor, "C", b.getId());
+        entityManager.getTransaction().commit();
+
+        entityManager.getTransaction().begin();
+        folderService.trash(tenantId, actor, a.getId());
+        entityManager.getTransaction().commit();
+
+        entityManager.clear();
+        List<Folder> childrenOfB = folderService.listChildren(tenantId, b.getId());
+
+        assertThat(childrenOfB).isEmpty();
+    }
+
+    /**
+     * Restoring a single trashed item works independently of anything else trashed alongside it
+     * (issue #37, decision #16): a descendant trashed independently before its ancestor was
+     * trashed stays trashed after the ancestor is restored - A -&gt; B, trash B (its own flag),
+     * then trash A, then restore A. B's own flag was never touched by A's trash/restore cycle, so
+     * B must still be excluded from A's child listing.
+     */
+    @Test
+    void restoringAnAncestorDoesNotResurrectADescendantTrashedIndependently() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+
+        entityManager.getTransaction().begin();
+        Folder a = folderService.create(tenantId, actor, "A", null);
+        Folder b = folderService.create(tenantId, actor, "B", a.getId());
+        entityManager.getTransaction().commit();
+
+        entityManager.getTransaction().begin();
+        folderService.trash(tenantId, actor, b.getId());
+        entityManager.getTransaction().commit();
+
+        entityManager.getTransaction().begin();
+        folderService.trash(tenantId, actor, a.getId());
+        entityManager.getTransaction().commit();
+
+        entityManager.getTransaction().begin();
+        folderService.restore(tenantId, actor, a.getId());
+        entityManager.getTransaction().commit();
+
+        entityManager.clear();
+        List<Folder> childrenOfA = folderService.listChildren(tenantId, a.getId());
+
+        assertThat(childrenOfA).isEmpty();
+    }
+
+    /**
+     * {@code move} only rejects a Folder becoming its own <em>direct</em> parent
+     * ({@code folderId.equals(parentFolderId)}), not an indirect cycle - two {@code move} calls
+     * can still produce one (A moved under B, B already under A). {@code isTrashed}'s parent-chain
+     * walk must not infinite-loop if it ever encounters such a cycle (code-review finding, issue
+     * #37): this asserts the walk terminates (returns, rather than {@code StackOverflowError}),
+     * not any particular trashed/not-trashed answer for a state that's already a data-integrity
+     * anomaly by the time it's reached.
+     */
+    @Test
+    void isTrashedTerminatesEvenIfTheParentChainContainsACycle() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+
+        entityManager.getTransaction().begin();
+        Folder a = folderService.create(tenantId, actor, "A", null);
+        Folder b = folderService.create(tenantId, actor, "B", a.getId());
+        entityManager.getTransaction().commit();
+
+        // A <-> B: move() only guards against a Folder being its own direct parent, so this
+        // indirect 2-cycle is currently reachable through the public API.
+        entityManager.getTransaction().begin();
+        folderService.move(tenantId, actor, a.getId(), b.getId());
+        entityManager.getTransaction().commit();
+
+        assertThatCode(() -> folderService.isTrashed(tenantId, a.getId())).doesNotThrowAnyException();
+        assertThatCode(() -> folderService.isTrashed(tenantId, b.getId())).doesNotThrowAnyException();
+    }
+
+    /**
+     * {@code listTrashed} is the trash bin's own query (issue #37): unlike {@code listChildren}'s
+     * exclusion rule, it returns only items with their own {@code trashedAt} set - scoped to
+     * direct children of a given parent. An untrashed sibling, and a Folder trashed under a
+     * completely different parent, are both noise this list must exclude.
+     */
+    @Test
+    void listTrashedScopedToParentReturnsOnlyDirectChildrenWithTheirOwnTrashedAtSet() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+
+        entityManager.getTransaction().begin();
+        Folder parent = folderService.create(tenantId, actor, "Quarterly Reports", null);
+        Folder trashedChild = folderService.create(tenantId, actor, "Old Draft", parent.getId());
+        folderService.create(tenantId, actor, "Final", parent.getId());
+        Folder otherParent = folderService.create(tenantId, actor, "Unrelated Parent", null);
+        Folder trashedUnderOtherParent =
+                folderService.create(tenantId, actor, "Old Draft Elsewhere", otherParent.getId());
+        entityManager.getTransaction().commit();
+
+        entityManager.getTransaction().begin();
+        folderService.trash(tenantId, actor, trashedChild.getId());
+        folderService.trash(tenantId, actor, trashedUnderOtherParent.getId());
+        entityManager.getTransaction().commit();
+
+        entityManager.clear();
+        List<Folder> trashed = folderService.listTrashed(tenantId, parent.getId());
+
+        assertThat(trashed).extracting(Folder::getId).containsExactly(trashedChild.getId());
+    }
+
+    /**
+     * With no {@code parentFolderId}, {@code listTrashed} is a flat, tenant-wide scan (issue #37)
+     * - it finds every explicitly-trashed Folder regardless of nesting depth, not just top-level
+     * ones, and no parent filter is applied at all.
+     */
+    @Test
+    void listTrashedWithNullParentReturnsEveryTrashedFolderTenantWideRegardlessOfNestingDepth() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+
+        entityManager.getTransaction().begin();
+        Folder trashedTopLevel = folderService.create(tenantId, actor, "Old Top-Level", null);
+        Folder a = folderService.create(tenantId, actor, "A", null);
+        Folder b = folderService.create(tenantId, actor, "B", a.getId());
+        Folder trashedNested = folderService.create(tenantId, actor, "C", b.getId());
+        folderService.create(tenantId, actor, "Untouched Top-Level", null);
+        entityManager.getTransaction().commit();
+
+        entityManager.getTransaction().begin();
+        folderService.trash(tenantId, actor, trashedTopLevel.getId());
+        folderService.trash(tenantId, actor, trashedNested.getId());
+        entityManager.getTransaction().commit();
+
+        entityManager.clear();
+        List<Folder> trashed = folderService.listTrashed(tenantId, null);
+
+        assertThat(trashed).extracting(Folder::getId)
+                .containsExactlyInAnyOrder(trashedTopLevel.getId(), trashedNested.getId());
     }
 }

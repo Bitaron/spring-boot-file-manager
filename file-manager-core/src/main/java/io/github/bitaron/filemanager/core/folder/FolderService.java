@@ -1,7 +1,9 @@
 package io.github.bitaron.filemanager.core.folder;
 
 import java.time.Instant;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import io.github.bitaron.filemanager.core.Actor;
@@ -72,13 +74,19 @@ public class FolderService {
     }
 
     /**
-     * Lists a Folder's immediate children, scoped to {@code tenantId}.
+     * Lists a Folder's immediate children, scoped to {@code tenantId}. Excludes children with
+     * their own {@code trashedAt} set, and returns empty entirely if {@code parentFolderId} is
+     * non-null and itself effectively trashed (issue #37, decision #16) - this is what makes an
+     * entire trashed subtree disappear from listings with no per-descendant write.
      *
      * @param parentFolderId the parent Folder's id, or {@code null} to list top-level Folders
      */
     public List<Folder> listChildren(TenantId tenantId, UUID parentFolderId) {
         if (tenantId == null) {
             throw new IllegalArgumentException("tenantId must not be null");
+        }
+        if (parentFolderId != null && isTrashed(tenantId, parentFolderId)) {
+            return List.of();
         }
         return folderLookup.findChildrenForTenant(parentFolderId, tenantId);
     }
@@ -98,6 +106,10 @@ public class FolderService {
      * caller with its own already-validated {@code parentFolderId} has no need for the extra
      * lookup. {@code FolderController} performs that existence check itself before calling this.
      *
+     * <p>Same trash-exclusion rule as {@link #listChildren(TenantId, UUID)} (issue #37, decision
+     * #16): children with their own {@code trashedAt} set are excluded, and the page is empty
+     * entirely if {@code parentFolderId} is non-null and itself effectively trashed.
+     *
      * @param parentFolderId the parent Folder's id, or {@code null} to list top-level Folders
      * @param afterId list Folders whose id sorts after this one, or {@code null} to start from
      *     the beginning
@@ -111,6 +123,9 @@ public class FolderService {
         }
         if (limit <= 0) {
             throw new IllegalArgumentException("limit must be positive");
+        }
+        if (parentFolderId != null && isTrashed(tenantId, parentFolderId)) {
+            return List.of();
         }
         return folderLookup.findChildrenForTenant(parentFolderId, tenantId, afterId, limit);
     }
@@ -178,5 +193,116 @@ public class FolderService {
         }
         folder.moveTo(parentFolderId, actor, Instant.now());
         return folderLookup.save(folder);
+    }
+
+    /**
+     * Trashes a Folder in place - a single-row update (ADR 0003/0004, decision #16). Descendants
+     * are never touched; their "effectively trashed" state is computed at read time instead.
+     *
+     * @throws IllegalArgumentException if {@code tenantId}, {@code actor}, or {@code folderId} is
+     *     missing
+     * @throws FolderNotFoundException if no Folder with {@code folderId} exists for this Tenant
+     */
+    public Folder trash(TenantId tenantId, Actor actor, UUID folderId) {
+        if (tenantId == null) {
+            throw new IllegalArgumentException("tenantId must not be null");
+        }
+        if (actor == null) {
+            throw new IllegalArgumentException("actor must not be null");
+        }
+        if (folderId == null) {
+            throw new IllegalArgumentException("folderId must not be null");
+        }
+        Folder folder = folderLookup.findByIdForTenant(folderId, tenantId);
+        if (folder == null) {
+            throw new FolderNotFoundException("No Folder with id " + folderId + " exists for this Tenant");
+        }
+        folder.trash(actor, Instant.now());
+        return folderLookup.save(folder);
+    }
+
+    /**
+     * Restores a trashed Folder in place - a single-row update (ADR 0003/0004, decision #16).
+     * Only this Folder's own trashed state is cleared; ancestor state is never checked or
+     * touched, so a descendant trashed independently of an ancestor stays trashed after that
+     * ancestor is restored.
+     *
+     * @throws IllegalArgumentException if {@code tenantId}, {@code actor}, or {@code folderId} is
+     *     missing
+     * @throws FolderNotFoundException if no Folder with {@code folderId} exists for this Tenant
+     */
+    public Folder restore(TenantId tenantId, Actor actor, UUID folderId) {
+        if (tenantId == null) {
+            throw new IllegalArgumentException("tenantId must not be null");
+        }
+        if (actor == null) {
+            throw new IllegalArgumentException("actor must not be null");
+        }
+        if (folderId == null) {
+            throw new IllegalArgumentException("folderId must not be null");
+        }
+        Folder folder = folderLookup.findByIdForTenant(folderId, tenantId);
+        if (folder == null) {
+            throw new FolderNotFoundException("No Folder with id " + folderId + " exists for this Tenant");
+        }
+        folder.restore(actor, Instant.now());
+        return folderLookup.save(folder);
+    }
+
+    /**
+     * Whether a Folder is "effectively trashed" (issue #37, decision #16/ADR 0003): its own
+     * {@code trashedAt} is set, or any ancestor Folder's is. Walks the parent chain at read time
+     * via repeated lookups - no materialized/cached state, per ADR 0003. {@code public} because
+     * {@code core.file.FileService} needs to consult a File's parent Folder chain too.
+     *
+     * <p>A nonexistent {@code folderId} (for this Tenant) is treated as not trashed - callers
+     * that need existence checked (e.g. a listing's own {@code parentFolderId} validation) do
+     * that separately; this method only answers the trashed question.
+     */
+    public boolean isTrashed(TenantId tenantId, UUID folderId) {
+        return isTrashed(tenantId, folderId, new HashSet<>());
+    }
+
+    /**
+     * The walk itself, guarded against a parent-chain cycle. {@code move} only rejects a Folder
+     * becoming its own direct parent, not an indirect cycle (A moved under B, B already under A)
+     * - {@code visited} stops this walk from recursing forever if such a cycle exists, rather than
+     * relying on {@code move}'s validation to have prevented one. A repeated id is treated as "not
+     * (further) trashed" - the walk has already checked every Folder it can reach without looping,
+     * so there's nothing more to learn by continuing.
+     */
+    private boolean isTrashed(TenantId tenantId, UUID folderId, Set<UUID> visited) {
+        if (!visited.add(folderId)) {
+            return false;
+        }
+        Folder folder = folderLookup.findByIdForTenant(folderId, tenantId);
+        if (folder == null) {
+            return false;
+        }
+        if (folder.getTrashedAt() != null) {
+            return true;
+        }
+        UUID parentFolderId = folder.getParentFolderId();
+        if (parentFolderId == null) {
+            return false;
+        }
+        return isTrashed(tenantId, parentFolderId, visited);
+    }
+
+    /**
+     * The trash bin's own query (issue #37): Folders with their own {@code trashedAt} set - unlike
+     * {@link #listChildren}'s exclusion rule, this surfaces only explicitly-trashed items, not the
+     * ancestor-computed "effectively trashed" state.
+     *
+     * @param parentFolderId scope to direct children of this Folder, or {@code null} for a flat,
+     *     tenant-wide scan (every trashed Folder regardless of nesting depth, no parent filter at
+     *     all)
+     * @throws IllegalArgumentException if {@code tenantId} is missing
+     */
+    public List<Folder> listTrashed(TenantId tenantId, UUID parentFolderId) {
+        if (tenantId == null) {
+            throw new IllegalArgumentException("tenantId must not be null");
+        }
+        return folderLookup.findTrashedForTenant(parentFolderId, tenantId);
     }
 }

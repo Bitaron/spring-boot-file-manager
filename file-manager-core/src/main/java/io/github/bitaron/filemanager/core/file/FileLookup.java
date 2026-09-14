@@ -34,4 +34,14 @@ interface FileLookup {
      * @param limit the maximum number of Files to return
      */
     List<File> findByParentFolderForTenant(UUID parentFolderId, TenantId tenantId, UUID afterId, int limit);
+
+    /**
+     * The trash bin's own query (issue #37): Files with their own {@code trashedAt} set - mirrors
+     * {@code FolderLookup#findTrashedForTenant} exactly.
+     *
+     * @param parentFolderId scope to direct children of this Folder, or {@code null} for a flat,
+     *     tenant-wide scan (every trashed File regardless of which Folder it's parented under, no
+     *     parent filter at all)
+     */
+    List<File> findTrashedForTenant(UUID parentFolderId, TenantId tenantId);
 }

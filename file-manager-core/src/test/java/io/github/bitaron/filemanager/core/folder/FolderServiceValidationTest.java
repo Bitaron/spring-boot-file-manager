@@ -180,6 +180,60 @@ class FolderServiceValidationTest {
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
+    @Test
+    void rejectsTrashWithNullTenantId() {
+        Actor actor = new Actor(UUID.randomUUID());
+        UUID folderId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> folderService.trash(null, actor, folderId))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void rejectsTrashWithNullActor() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        UUID folderId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> folderService.trash(tenantId, null, folderId))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void rejectsTrashWithNullFolderId() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+
+        assertThatThrownBy(() -> folderService.trash(tenantId, actor, null))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void rejectsRestoreWithNullTenantId() {
+        Actor actor = new Actor(UUID.randomUUID());
+        UUID folderId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> folderService.restore(null, actor, folderId))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void rejectsRestoreWithNullActor() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        UUID folderId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> folderService.restore(tenantId, null, folderId))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void rejectsRestoreWithNullFolderId() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+
+        assertThatThrownBy(() -> folderService.restore(tenantId, actor, null))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
     /** Every guard clause above rejects before {@code create} would ever reach the DAO. */
     private static FolderLookup rejectingLookup() {
         return new FolderLookup() {
@@ -201,6 +255,11 @@ class FolderServiceValidationTest {
             @Override
             public List<Folder> findChildrenForTenant(
                     UUID parentFolderId, TenantId tenantId, UUID afterId, int limit) {
+                throw new AssertionError("A guard-clause rejection must never reach the DAO");
+            }
+
+            @Override
+            public List<Folder> findTrashedForTenant(UUID parentFolderId, TenantId tenantId) {
                 throw new AssertionError("A guard-clause rejection must never reach the DAO");
             }
         };

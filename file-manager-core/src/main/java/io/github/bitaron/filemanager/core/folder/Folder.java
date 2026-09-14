@@ -123,6 +123,45 @@ public class Folder {
         this.lastModifiedBy = actor.id();
     }
 
+    /**
+     * Trashes this Folder in place - a single-row update, per ADR 0003/0004. Per decision #16,
+     * this only ever writes this Folder's own {@code trashedAt}/{@code trashedBy} - descendants
+     * are never touched; their "effectively trashed" state is computed at read time instead.
+     *
+     * <p>Idempotent (issue #37): if this Folder is already trashed, this is a full no-op - none
+     * of {@code trashedAt}/{@code trashedBy}/{@code updatedAt}/{@code lastModifiedBy} are
+     * touched, so a redundant call never overwrites the original trash and never produces a
+     * spurious "last modified" change.
+     */
+    void trash(Actor actor, Instant now) {
+        if (trashedAt != null) {
+            return;
+        }
+        this.trashedAt = now;
+        this.trashedBy = actor.id();
+        this.updatedAt = now;
+        this.lastModifiedBy = actor.id();
+    }
+
+    /**
+     * Restores this Folder in place - a single-row update, per ADR 0003/0004. Per decision #16,
+     * this only ever clears this Folder's own {@code trashedAt}/{@code trashedBy} - it never
+     * checks or touches ancestor state, so a descendant trashed independently of an ancestor stays
+     * trashed after that ancestor is restored.
+     *
+     * <p>Idempotent (issue #37): if this Folder is already active (not trashed), this is a full
+     * no-op - {@code updatedAt}/{@code lastModifiedBy} are left untouched too.
+     */
+    void restore(Actor actor, Instant now) {
+        if (trashedAt == null) {
+            return;
+        }
+        this.trashedAt = null;
+        this.trashedBy = null;
+        this.updatedAt = now;
+        this.lastModifiedBy = actor.id();
+    }
+
     public TenantId tenantId() {
         return new TenantId(tenantId);
     }

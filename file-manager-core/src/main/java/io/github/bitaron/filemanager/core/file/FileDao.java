@@ -46,12 +46,17 @@ class FileDao implements FileLookup {
      * TenantId)} - minus its {@code IS NULL} branch, since a File's {@code parentFolderId} is never
      * {@code null} (every File belongs to exactly one Folder), so it's always bound as a plain query
      * parameter.
+     *
+     * <p>Excludes Files with their own {@code trashedAt} set (issue #37, ADR 0004: ordinary
+     * listings silently exclude trashed items), mirroring {@code FolderDao}'s same predicate. The
+     * ancestor-trashed half (an entire subtree disappearing) is handled by the caller
+     * short-circuiting to an empty list before this query even runs.
      */
     @Override
     public List<File> findByParentFolderForTenant(UUID parentFolderId, TenantId tenantId) {
         TypedQuery<File> query = entityManager.createQuery(
                 "SELECT f FROM File f WHERE f.tenantId = :tenantId AND f.parentFolderId = :parentFolderId "
-                        + "ORDER BY f.createdAt",
+                        + "AND f.trashedAt IS NULL ORDER BY f.createdAt",
                 File.class);
         query.setParameter("tenantId", tenantId.id());
         query.setParameter("parentFolderId", parentFolderId);
@@ -62,12 +67,14 @@ class FileDao implements FileLookup {
      * Same shape as {@link #findByParentFolderForTenant(UUID, TenantId)}, plus an id-ascending
      * order (the composite index already used above serves this ordering too, per ADR 0003's
      * time-ordered UUIDv7 rationale) and an optional {@code id > :afterId} predicate for the
-     * cursor, mirroring {@code FolderDao#findChildrenForTenant(UUID, TenantId, UUID, int)}.
+     * cursor, mirroring {@code FolderDao#findChildrenForTenant(UUID, TenantId, UUID, int)}. Same
+     * trashed-exclusion predicate as above.
      */
     @Override
     public List<File> findByParentFolderForTenant(
             UUID parentFolderId, TenantId tenantId, UUID afterId, int limit) {
         String jpql = "SELECT f FROM File f WHERE f.tenantId = :tenantId AND f.parentFolderId = :parentFolderId"
+                + " AND f.trashedAt IS NULL"
                 + (afterId == null ? "" : " AND f.id > :afterId")
                 + " ORDER BY f.id ASC";
         TypedQuery<File> query = entityManager.createQuery(jpql, File.class);
@@ -77,6 +84,24 @@ class FileDao implements FileLookup {
             query.setParameter("afterId", afterId);
         }
         query.setMaxResults(limit);
+        return query.getResultList();
+    }
+
+    /**
+     * Backs the trash bin's own query (issue #37): {@code trashedAt IS NOT NULL} unconditionally,
+     * plus an optional {@code parentFolderId} branch, mirroring
+     * {@code FolderDao#findTrashedForTenant} exactly.
+     */
+    @Override
+    public List<File> findTrashedForTenant(UUID parentFolderId, TenantId tenantId) {
+        String jpql = "SELECT f FROM File f WHERE f.tenantId = :tenantId AND f.trashedAt IS NOT NULL"
+                + (parentFolderId == null ? "" : " AND f.parentFolderId = :parentFolderId")
+                + " ORDER BY f.trashedAt DESC";
+        TypedQuery<File> query = entityManager.createQuery(jpql, File.class);
+        query.setParameter("tenantId", tenantId.id());
+        if (parentFolderId != null) {
+            query.setParameter("parentFolderId", parentFolderId);
+        }
         return query.getResultList();
     }
 }
