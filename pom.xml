@@ -46,6 +46,7 @@
         <module>file-manager-api</module>
         <module>file-manager-service</module>
         <module>file-manager-test-support</module>
+        <module>file-manager-usage-example</module>
     </modules>
 
     <dependencyManagement>
