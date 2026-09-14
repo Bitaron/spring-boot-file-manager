@@ -52,6 +52,29 @@ if (resolution instanceof ApiKeyResolution.Authenticated authenticated) {
 
 A missing, malformed, and revoked ApiKey all resolve to `ApiKeyResolution.NotAuthenticated` indistinguishably — there is no reason code to inspect.
 
+## Trash and restore
+
+`FolderService`/`FileService` each expose `trash`/`restore` directly (issue #37) — dedicated methods, not a field toggle, mirroring `rename`/`move`'s shape:
+
+```java
+folderService.trash(tenantId, actor, folderId);   // reversible; a single-row write, no matter how deep the subtree
+folderService.restore(tenantId, actor, folderId); // clears only this Folder's own trashed state
+
+fileService.trash(tenantId, actor, fileId);
+fileService.restore(tenantId, actor, fileId);
+```
+
+Trashing a Folder never touches its descendants' rows: a descendant counts as trashed if its own flag is set, or any ancestor's is (decision #16) — `listChildren`/`listFiles` already exclude anything effectively trashed, no filter flag needed. Both `trash` and `restore` are idempotent: calling either again on an item already in that state is a no-op (nothing is rewritten, not even `updatedAt`).
+
+`core.trash.TrashService`, the fourth granular per-aggregate service, composes `FolderService` + `FileService` for the unified trash bin — Files and Folders together, discriminated by type, sorted by `trashedAt` descending:
+
+```java
+List<TrashItem> tenantWideTrash = trashService.list(tenantId, null);
+List<TrashItem> trashWithinFolder = trashService.list(tenantId, folderId); // scoped to that Folder's direct children
+```
+
+`TrashItem` is a sealed interface (`TrashItem.TrashedFolder`/`TrashItem.TrashedFile`) — pattern-match on it to get at the underlying `Folder`/`File`.
+
 ## Transactions
 
 Wrap calls to `FolderService` in your own `@Transactional` boundary (or an existing one already in scope):
@@ -70,4 +93,4 @@ public void createQuarterFolder(TenantId tenantId, Actor actor) {
 - No StorageBackend or REST configuration for Folder creation — those belong to other parts of the engine not yet covered here.
 - No ApiKey hash lookup of your own — `ApiKeyResolver` already does it, if you want it.
 
-This document grows as later tickets add more Embedded Mode surface (Files, StorageBackend, Trash, AccessTokens).
+This document grows as later tickets add more Embedded Mode surface (Files, StorageBackend, AccessTokens).

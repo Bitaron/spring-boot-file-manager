@@ -252,6 +252,48 @@ class FolderControllerIntegrationTest {
         assertThat(secondPage.nextCursor()).isNull();
     }
 
+    @Test
+    void trashEndpointMarksAFolderTrashedAndRestoreEndpointClearsItAgain() {
+        String secret = seedApiKey(new TenantId(UUID.randomUUID()), false);
+        FolderResponse created = create(secret, "Invoices", null);
+        assertThat(created.trashedAt()).isNull();
+
+        ResponseEntity<FolderResponse> trashResponse = restTemplate.exchange(
+                "/api/v1/folders/" + created.id() + "/trash",
+                HttpMethod.POST,
+                new HttpEntity<>(authHeaders(secret)),
+                FolderResponse.class);
+
+        assertThat(trashResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(trashResponse.getBody().id()).isEqualTo(created.id());
+        assertThat(trashResponse.getBody().trashedAt()).isNotNull();
+
+        ResponseEntity<FolderResponse> restoreResponse = restTemplate.exchange(
+                "/api/v1/folders/" + created.id() + "/restore",
+                HttpMethod.POST,
+                new HttpEntity<>(authHeaders(secret)),
+                FolderResponse.class);
+
+        assertThat(restoreResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(restoreResponse.getBody().trashedAt()).isNull();
+    }
+
+    @Test
+    void trashingAnotherTenantsFolderReturns404NeverA403() {
+        String ownerSecret = seedApiKey(new TenantId(UUID.randomUUID()), false);
+        String otherTenantSecret = seedApiKey(new TenantId(UUID.randomUUID()), false);
+        FolderResponse folder = create(ownerSecret, "Private Folder", null);
+
+        ResponseEntity<ProblemDetail> response = restTemplate.exchange(
+                "/api/v1/folders/" + folder.id() + "/trash",
+                HttpMethod.POST,
+                new HttpEntity<>(authHeaders(otherTenantSecret)),
+                ProblemDetail.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        assertThat(response.getBody().getStatus()).isEqualTo(404);
+    }
+
     private FolderResponse create(String secret, String name, UUID parentFolderId) {
         ResponseEntity<FolderResponse> response = restTemplate.exchange(
                 "/api/v1/folders",

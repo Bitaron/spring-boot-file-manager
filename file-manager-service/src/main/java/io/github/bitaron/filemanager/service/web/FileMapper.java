@@ -25,6 +25,7 @@ final class FileMapper {
                 file.getContentType(),
                 file.getVisibility().name(),
                 file.getCreatedAt(),
-                file.getUpdatedAt());
+                file.getUpdatedAt(),
+                file.getTrashedAt());
     }
 }

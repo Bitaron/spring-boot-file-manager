@@ -172,6 +172,27 @@ class FileController {
         return FileMapper.toResponse(file != null ? file : fetchOrThrow(tenantId, id));
     }
 
+    @PostMapping("/{id}/trash")
+    @Transactional
+    @Operation(
+            summary = "Trash a File",
+            description = "A dedicated action endpoint, not a field PATCH (ADR 0004). Idempotent: "
+                    + "trashing an already-trashed File is a no-op.")
+    FileResponse trash(@PathVariable UUID id, TenantId tenantId, Actor actor) {
+        return FileMapper.toResponse(fileService.trash(tenantId, actor, id));
+    }
+
+    @PostMapping("/{id}/restore")
+    @Transactional
+    @Operation(
+            summary = "Restore a trashed File",
+            description = "A dedicated action endpoint, not a field PATCH (ADR 0004). Idempotent: "
+                    + "restoring an already-active File is a no-op. Only this File's own trashed "
+                    + "state is cleared - independent of its parent Folder's.")
+    FileResponse restore(@PathVariable UUID id, TenantId tenantId, Actor actor) {
+        return FileMapper.toResponse(fileService.restore(tenantId, actor, id));
+    }
+
     @PostMapping("/{id}/access-tokens")
     @Transactional
     @Operation(

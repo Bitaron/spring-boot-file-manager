@@ -163,6 +163,29 @@ class FolderController {
         return FolderMapper.toResponse(folder != null ? folder : fetchOrThrow(tenantId, id));
     }
 
+    @PostMapping("/{id}/trash")
+    @Transactional
+    @Operation(
+            summary = "Trash a Folder",
+            description = "A dedicated action endpoint, not a field PATCH (ADR 0004). Idempotent: "
+                    + "trashing an already-trashed Folder is a no-op. Descendants aren't touched - "
+                    + "they disappear from listings because the Folder itself is now effectively "
+                    + "trashed, not because their own rows changed.")
+    FolderResponse trash(@PathVariable UUID id, TenantId tenantId, Actor actor) {
+        return FolderMapper.toResponse(folderService.trash(tenantId, actor, id));
+    }
+
+    @PostMapping("/{id}/restore")
+    @Transactional
+    @Operation(
+            summary = "Restore a trashed Folder",
+            description = "A dedicated action endpoint, not a field PATCH (ADR 0004). Idempotent: "
+                    + "restoring an already-active Folder is a no-op. Only this Folder's own "
+                    + "trashed state is cleared - independent of any ancestor's or descendant's.")
+    FolderResponse restore(@PathVariable UUID id, TenantId tenantId, Actor actor) {
+        return FolderMapper.toResponse(folderService.restore(tenantId, actor, id));
+    }
+
     private Folder fetchOrThrow(TenantId tenantId, UUID folderId) {
         Folder folder = folderService.fetch(tenantId, folderId);
         if (folder == null) {

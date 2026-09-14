@@ -152,6 +152,42 @@ public class File {
         this.lastModifiedBy = actor.id();
     }
 
+    /**
+     * Trashes this File in place - a single-row update, per ADR 0003/0004. Mirrors
+     * {@code Folder.trash} exactly.
+     *
+     * <p>Idempotent (issue #37): if this File is already trashed, this is a full no-op - none of
+     * {@code trashedAt}/{@code trashedBy}/{@code updatedAt}/{@code lastModifiedBy} are touched, so
+     * a redundant call never overwrites the original trash and never produces a spurious "last
+     * modified" change.
+     */
+    void trash(Actor actor, Instant now) {
+        if (trashedAt != null) {
+            return;
+        }
+        this.trashedAt = now;
+        this.trashedBy = actor.id();
+        this.updatedAt = now;
+        this.lastModifiedBy = actor.id();
+    }
+
+    /**
+     * Restores this File in place - a single-row update, per ADR 0003/0004. Mirrors
+     * {@code Folder.restore} exactly.
+     *
+     * <p>Idempotent (issue #37): if this File is already active (not trashed), this is a full
+     * no-op - {@code updatedAt}/{@code lastModifiedBy} are left untouched too.
+     */
+    void restore(Actor actor, Instant now) {
+        if (trashedAt == null) {
+            return;
+        }
+        this.trashedAt = null;
+        this.trashedBy = null;
+        this.updatedAt = now;
+        this.lastModifiedBy = actor.id();
+    }
+
     public TenantId tenantId() {
         return new TenantId(tenantId);
     }

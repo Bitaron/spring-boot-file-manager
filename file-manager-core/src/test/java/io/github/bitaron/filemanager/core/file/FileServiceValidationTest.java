@@ -287,6 +287,60 @@ class FileServiceValidationTest {
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
+    @Test
+    void rejectsTrashWithNullTenantId() {
+        Actor actor = new Actor(UUID.randomUUID());
+        UUID fileId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> fileService.trash(null, actor, fileId))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void rejectsTrashWithNullActor() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        UUID fileId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> fileService.trash(tenantId, null, fileId))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void rejectsTrashWithNullFileId() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+
+        assertThatThrownBy(() -> fileService.trash(tenantId, actor, null))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void rejectsRestoreWithNullTenantId() {
+        Actor actor = new Actor(UUID.randomUUID());
+        UUID fileId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> fileService.restore(null, actor, fileId))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void rejectsRestoreWithNullActor() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        UUID fileId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> fileService.restore(tenantId, null, fileId))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void rejectsRestoreWithNullFileId() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+
+        assertThatThrownBy(() -> fileService.restore(tenantId, actor, null))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
     private static InputStream emptyContent() {
         return new ByteArrayInputStream("".getBytes(StandardCharsets.UTF_8));
     }
@@ -312,6 +366,11 @@ class FileServiceValidationTest {
             @Override
             public List<File> findByParentFolderForTenant(
                     UUID parentFolderId, TenantId tenantId, UUID afterId, int limit) {
+                throw new AssertionError("A guard-clause rejection must never reach the DAO");
+            }
+
+            @Override
+            public List<File> findTrashedForTenant(UUID parentFolderId, TenantId tenantId) {
                 throw new AssertionError("A guard-clause rejection must never reach the DAO");
             }
         };

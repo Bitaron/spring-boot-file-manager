@@ -33,4 +33,15 @@ interface FolderLookup {
      * @param limit the maximum number of Folders to return
      */
     List<Folder> findChildrenForTenant(UUID parentFolderId, TenantId tenantId, UUID afterId, int limit);
+
+    /**
+     * The trash bin's own query (issue #37): Folders with their own {@code trashedAt} set -
+     * unlike {@link #findChildrenForTenant(UUID, TenantId)}'s exclusion rule, this surfaces only
+     * explicitly-trashed items, not the ancestor-computed "effectively trashed" state.
+     *
+     * @param parentFolderId scope to direct children of this Folder, or {@code null} for a flat,
+     *     tenant-wide scan (every trashed Folder regardless of nesting depth, no parent filter at
+     *     all)
+     */
+    List<Folder> findTrashedForTenant(UUID parentFolderId, TenantId tenantId);
 }

@@ -20,6 +20,7 @@ final class FolderMapper {
                 folder.getName(),
                 folder.getParentFolderId(),
                 folder.getCreatedAt(),
-                folder.getUpdatedAt());
+                folder.getUpdatedAt(),
+                folder.getTrashedAt());
     }
 }
