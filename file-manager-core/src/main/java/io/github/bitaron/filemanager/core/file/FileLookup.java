@@ -15,6 +15,14 @@ interface FileLookup {
 
     File save(File file);
 
+    /**
+     * Permanently deletes this File's metadata row (issue #38: Purge, the only way content is ever
+     * permanently removed - decision #7). Callers are responsible for having already deleted the
+     * corresponding {@code StorageBackend} content, and for having already checked this File is
+     * actually trashed - this method itself performs neither check.
+     */
+    void delete(File file);
+
     File findByIdForTenant(UUID id, TenantId tenantId);
 
     /**
@@ -22,6 +30,15 @@ interface FileLookup {
      *     {@code parentFolderId} (ADR 0003: every File belongs to exactly one Folder)
      */
     List<File> findByParentFolderForTenant(UUID parentFolderId, TenantId tenantId);
+
+    /**
+     * Same shape as {@link #findByParentFolderForTenant(UUID, TenantId)}, minus its
+     * {@code trashedAt IS NULL} predicate (issue #38: {@code FileService#purgeAllInFolder} must
+     * purge every File under a Folder regardless of that File's own trashed state).
+     *
+     * @param parentFolderId the parent Folder's id - never {@code null}
+     */
+    List<File> findAllByParentFolderForTenant(UUID parentFolderId, TenantId tenantId);
 
     /**
      * One page of a Folder's Files, ordered by id ascending (UUIDv7 is time-ordered, ADR 0003) -

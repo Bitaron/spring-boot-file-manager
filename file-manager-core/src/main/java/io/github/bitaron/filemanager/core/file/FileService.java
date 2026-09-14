@@ -364,4 +364,68 @@ public class FileService {
         }
         return fileLookup.findTrashedForTenant(parentFolderId, tenantId);
     }
+
+    /**
+     * Permanently deletes a single, already-trashed File - both its {@code StorageBackend} content
+     * and its metadata row (issue #38: Purge, the only way content is ever permanently removed,
+     * decision #7 - there is no background job that does this on its own). Unlike
+     * {@code trash}/{@code restore}, this takes no {@code actor}: purging removes the row entirely,
+     * so there is nothing left afterwards to attribute the action to.
+     *
+     * <p>The guard below checks this File's own {@code trashedAt} only - mirroring how
+     * {@link #restore} only ever looks at a row's own state, with no ancestor walk - so purging a
+     * File that was never explicitly trashed (even if it merely sits under a trashed Folder) is
+     * rejected. Content is deleted from the {@link StorageBackend} before the metadata row itself,
+     * mirroring {@link #upload}'s "storage first" ordering: the file-manager-service REST layer
+     * wraps this call in a single transaction, so if {@code fileLookup.delete} were to fail after a
+     * successful {@code storageBackend.delete}, that failure rolls the row deletion back but cannot
+     * un-delete already-removed content - accepted here per AGENT-BRIEF.md's "no compensation
+     * logic" scope note.
+     *
+     * @throws IllegalArgumentException if {@code tenantId} or {@code fileId} is missing, or the
+     *     File is not (explicitly) trashed
+     * @throws FileNotFoundException if no File with {@code fileId} exists for this Tenant
+     */
+    public void purge(TenantId tenantId, UUID fileId) {
+        if (tenantId == null) {
+            throw new IllegalArgumentException("tenantId must not be null");
+        }
+        if (fileId == null) {
+            throw new IllegalArgumentException("fileId must not be null");
+        }
+        File file = fileLookup.findByIdForTenant(fileId, tenantId);
+        if (file == null) {
+            throw new FileNotFoundException("No File with id " + fileId + " exists for this Tenant");
+        }
+        if (file.getTrashedAt() == null) {
+            throw new IllegalArgumentException("File with id " + fileId + " is not trashed");
+        }
+        storageBackend.delete(file.getStorageReference());
+        fileLookup.delete(file);
+    }
+
+    /**
+     * Permanently deletes every File directly under {@code parentFolderId} - both
+     * {@code StorageBackend} content and metadata row, per File - <b>regardless</b> of each File's
+     * own trashed state (issue #38: the Purge cascade primitive {@code core.trash.TrashService}
+     * calls, once per Folder id, while purging an entire trashed subtree). Unlike {@link #purge},
+     * this performs no trashed-state check at all: the cascade validates the subtree's *root*
+     * Folder's own {@code trashedAt} exactly once, then purges every descendant unconditionally
+     * (decision #16, mirroring {@code FolderService#deleteRow}'s same reasoning) - re-checking each
+     * File's own state here would be redundant, not protective.
+     *
+     * @throws IllegalArgumentException if {@code tenantId} or {@code parentFolderId} is missing
+     */
+    public void purgeAllInFolder(TenantId tenantId, UUID parentFolderId) {
+        if (tenantId == null) {
+            throw new IllegalArgumentException("tenantId must not be null");
+        }
+        if (parentFolderId == null) {
+            throw new IllegalArgumentException("parentFolderId must not be null");
+        }
+        for (File file : fileLookup.findAllByParentFolderForTenant(parentFolderId, tenantId)) {
+            storageBackend.delete(file.getStorageReference());
+            fileLookup.delete(file);
+        }
+    }
 }

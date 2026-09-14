@@ -415,6 +415,67 @@ class FileServiceTest {
     }
 
     /**
+     * Purge (issue #38) is the only way content is ever permanently removed (decision #7): once a
+     * File has been explicitly trashed, purging it calls through to
+     * {@code storageBackend.delete(file.getStorageReference())} and then deletes the metadata row
+     * itself via {@link FileLookup#delete(File)}.
+     */
+    @Test
+    void purgeDeletesStorageBackendContentAndTheMetadataRowForATrashedFile() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+        File existing = new File(UUID.randomUUID(), tenantId, UUID.randomUUID(), "invoice.pdf", 11,
+                "application/pdf", Visibility.PRIVATE, "some/reference", actor, Instant.now());
+
+        FakeFileLookup fileLookup = new FakeFileLookup();
+        fileLookup.byId.put(existing.getId(), existing);
+        FakeStorageBackend storageBackend = new FakeStorageBackend();
+        FileService fileService = new FileService(fileLookup, folderService, storageBackend);
+
+        fileService.trash(tenantId, actor, existing.getId());
+
+        fileService.purge(tenantId, existing.getId());
+
+        assertThat(storageBackend.deleteCalls).containsExactly(existing.getStorageReference());
+        assertThat(fileLookup.deleted).containsExactly(existing);
+    }
+
+    /**
+     * Purging anything not (explicitly) trashed is rejected (issue #38) - the guard checks the
+     * File's own {@code trashedAt} only, mirroring how {@link #restore} only ever looks at a row's
+     * own state (no ancestor walk). Rejected before ever reaching {@code StorageBackend} or the
+     * metadata row.
+     */
+    @Test
+    void purgeOfAFileThatIsNotTrashedThrowsIllegalArgumentException() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        Actor actor = new Actor(UUID.randomUUID());
+        File existing = new File(UUID.randomUUID(), tenantId, UUID.randomUUID(), "invoice.pdf", 11,
+                "application/pdf", Visibility.PRIVATE, "some/reference", actor, Instant.now());
+
+        FakeFileLookup fileLookup = new FakeFileLookup();
+        fileLookup.byId.put(existing.getId(), existing);
+        FakeStorageBackend storageBackend = new FakeStorageBackend();
+        FileService fileService = new FileService(fileLookup, folderService, storageBackend);
+
+        assertThatThrownBy(() -> fileService.purge(tenantId, existing.getId()))
+                .isInstanceOf(IllegalArgumentException.class);
+
+        assertThat(storageBackend.deleteCalls).isEmpty();
+        assertThat(fileLookup.deleted).isEmpty();
+    }
+
+    @Test
+    void purgeOfANonExistentFileThrowsFileNotFoundException() {
+        TenantId tenantId = new TenantId(UUID.randomUUID());
+        FakeFileLookup fileLookup = new FakeFileLookup();
+        FileService fileService = new FileService(fileLookup, folderService, new FakeStorageBackend());
+
+        assertThatThrownBy(() -> fileService.purge(tenantId, UUID.randomUUID()))
+                .isInstanceOf(FileNotFoundException.class);
+    }
+
+    /**
      * Ordinary listings silently exclude trashed items, no filter flag needed (issue #37, ADR
      * 0004) - the cheap, per-row half of the exclusion rule, mirroring
      * {@code FolderServiceTest#listChildrenExcludesAChildWithItsOwnTrashedAtSet}: a File's own
@@ -593,11 +654,19 @@ class FileServiceTest {
     private static final class FakeFileLookup implements FileLookup {
         private final Map<UUID, File> byId = new HashMap<>();
         private File saved;
+        // Not yet declared on FileLookup itself (issue #38) - added here only as the minimal fake
+        // wiring purge()'s test needs; production FileLookup/FileDao are deliberately untouched.
+        private final List<File> deleted = new java.util.ArrayList<>();
 
         @Override
         public File save(File file) {
             this.saved = file;
             return file;
+        }
+
+        public void delete(File file) {
+            deleted.add(file);
+            byId.remove(file.getId());
         }
 
         @Override
@@ -623,6 +692,19 @@ class FileServiceTest {
         public List<File> findByParentFolderForTenant(
                 UUID parentFolderId, TenantId tenantId, UUID afterId, int limit) {
             throw new AssertionError("not expected to be called by upload()/fetch()/fetchContent()");
+        }
+
+        // Mirrors FileDao#findAllByParentFolderForTenant's real query exactly: scoped to
+        // parentFolderId, with no trashedAt exclusion at all (issue #38).
+        @Override
+        public List<File> findAllByParentFolderForTenant(UUID parentFolderId, TenantId tenantId) {
+            List<File> matching = new java.util.ArrayList<>();
+            for (File file : byId.values()) {
+                if (file.getParentFolderId().equals(parentFolderId)) {
+                    matching.add(file);
+                }
+            }
+            return matching;
         }
 
         // Mirrors FileDao#findTrashedForTenant's real query exactly: own trashedAt set,
@@ -657,6 +739,11 @@ class FileServiceTest {
             }
 
             @Override
+            public void delete(File file) {
+                throw new AssertionError("not expected to be called by upload()");
+            }
+
+            @Override
             public File findByIdForTenant(UUID id, TenantId tenantId) {
                 throw new AssertionError("not expected to be called by upload()");
             }
@@ -669,6 +756,11 @@ class FileServiceTest {
             @Override
             public List<File> findByParentFolderForTenant(
                     UUID parentFolderId, TenantId tenantId, UUID afterId, int limit) {
+                throw new AssertionError("not expected to be called by upload()");
+            }
+
+            @Override
+            public List<File> findAllByParentFolderForTenant(UUID parentFolderId, TenantId tenantId) {
                 throw new AssertionError("not expected to be called by upload()");
             }
 

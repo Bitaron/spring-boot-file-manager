@@ -16,12 +16,28 @@ interface FolderLookup {
 
     Folder save(Folder folder);
 
+    /**
+     * Permanently deletes this Folder's row (issue #38: Purge). Callers are responsible for
+     * having already checked this Folder is actually trashed (or, for a descendant mid-cascade,
+     * that its ancestor was) - this method itself performs no check.
+     */
+    void delete(Folder folder);
+
     Folder findByIdForTenant(UUID id, TenantId tenantId);
 
     /**
      * @param parentFolderId the parent Folder's id, or {@code null} to list top-level Folders
      */
     List<Folder> findChildrenForTenant(UUID parentFolderId, TenantId tenantId);
+
+    /**
+     * Same shape as {@link #findChildrenForTenant(UUID, TenantId)}, but with <b>no</b>
+     * {@code trashedAt} exclusion (issue #38: the Purge cascade walk must reach a descendant even
+     * if only an ancestor - not that descendant itself - is trashed).
+     *
+     * @param parentFolderId the parent Folder's id, or {@code null} to list top-level Folders
+     */
+    List<Folder> findAllChildrenForTenant(UUID parentFolderId, TenantId tenantId);
 
     /**
      * One page of a Folder's immediate children, ordered by id ascending (UUIDv7 is

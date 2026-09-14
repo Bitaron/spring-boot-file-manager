@@ -131,6 +131,50 @@ public class FolderService {
     }
 
     /**
+     * Lists a Folder's immediate children, scoped to {@code tenantId} - <b>without</b>
+     * {@link #listChildren}'s trashed-exclusion rule. This exists specifically for the Purge
+     * cascade walk (issue #38, {@code core.trash.TrashService#purge}): that walk must reach a
+     * descendant even if only an ancestor - not that descendant itself - is trashed, since
+     * descendants are purged unconditionally once the root is confirmed trashed (decision #16).
+     *
+     * @param parentFolderId the parent Folder's id, or {@code null} to list top-level Folders
+     * @throws IllegalArgumentException if {@code tenantId} is missing
+     */
+    public List<Folder> listAllChildren(TenantId tenantId, UUID parentFolderId) {
+        if (tenantId == null) {
+            throw new IllegalArgumentException("tenantId must not be null");
+        }
+        return folderLookup.findAllChildrenForTenant(parentFolderId, tenantId);
+    }
+
+    /**
+     * Permanently deletes a single Folder's metadata row (issue #38: Purge) - unconditionally, with
+     * <b>no</b> trashed-state check. Unlike {@link #trash}/{@link #restore}, this performs no
+     * validation of its own beyond existence: the Purge cascade ({@code core.trash.TrashService})
+     * validates the *root* Folder's own {@code trashedAt} exactly once, then purges every
+     * descendant regardless of that descendant's own trashed state (decision #16) - re-checking it
+     * here per descendant would be redundant, not protective. {@code FolderService} stays
+     * File-unaware (docs/architecture.md), so this deletes only the Folder row; the cascade
+     * orchestrator is responsible for also purging any Files the Folder contains.
+     *
+     * @throws IllegalArgumentException if {@code tenantId} or {@code folderId} is missing
+     * @throws FolderNotFoundException if no Folder with {@code folderId} exists for this Tenant
+     */
+    public void deleteRow(TenantId tenantId, UUID folderId) {
+        if (tenantId == null) {
+            throw new IllegalArgumentException("tenantId must not be null");
+        }
+        if (folderId == null) {
+            throw new IllegalArgumentException("folderId must not be null");
+        }
+        Folder folder = folderLookup.findByIdForTenant(folderId, tenantId);
+        if (folder == null) {
+            throw new FolderNotFoundException("No Folder with id " + folderId + " exists for this Tenant");
+        }
+        folderLookup.delete(folder);
+    }
+
+    /**
      * Renames a Folder in place - a single-row update (ADR 0003/0004). Duplicate sibling names
      * stay legal (ADR 0003), so no uniqueness check is performed.
      *

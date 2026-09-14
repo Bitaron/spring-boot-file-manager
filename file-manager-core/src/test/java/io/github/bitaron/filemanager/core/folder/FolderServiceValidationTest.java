@@ -248,6 +248,11 @@ class FolderServiceValidationTest {
             }
 
             @Override
+            public void delete(Folder folder) {
+                throw new AssertionError("A guard-clause rejection must never reach the DAO");
+            }
+
+            @Override
             public List<Folder> findChildrenForTenant(UUID parentFolderId, TenantId tenantId) {
                 throw new AssertionError("A guard-clause rejection must never reach the DAO");
             }
@@ -255,6 +260,11 @@ class FolderServiceValidationTest {
             @Override
             public List<Folder> findChildrenForTenant(
                     UUID parentFolderId, TenantId tenantId, UUID afterId, int limit) {
+                throw new AssertionError("A guard-clause rejection must never reach the DAO");
+            }
+
+            @Override
+            public List<Folder> findAllChildrenForTenant(UUID parentFolderId, TenantId tenantId) {
                 throw new AssertionError("A guard-clause rejection must never reach the DAO");
             }
 

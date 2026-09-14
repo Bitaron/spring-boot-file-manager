@@ -1,9 +1,13 @@
 package io.github.bitaron.filemanager.service.web;
 
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.UUID;
 
+import io.github.bitaron.filemanager.api.file.FileResponse;
+import io.github.bitaron.filemanager.api.file.UploadFileMetadata;
 import io.github.bitaron.filemanager.api.folder.CreateFolderRequest;
 import io.github.bitaron.filemanager.api.folder.FolderResponse;
 import io.github.bitaron.filemanager.api.paging.CursorPage;
@@ -13,12 +17,14 @@ import io.github.bitaron.filemanager.core.apikey.ApiKeySecret;
 import io.github.bitaron.filemanager.core.tenant.TenantId;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.resttestclient.TestRestTemplate;
 import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.SpringBootTest.WebEnvironment;
 import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -26,8 +32,12 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -43,9 +53,26 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 @SpringBootTest(
         webEnvironment = WebEnvironment.RANDOM_PORT,
-        properties = "spring.jpa.hibernate.ddl-auto=create-drop")
+        properties = {
+            "spring.jpa.hibernate.ddl-auto=create-drop",
+            "file-manager.storage.backend=local"
+        })
 @AutoConfigureTestRestTemplate
 class FolderControllerIntegrationTest {
+
+    /**
+     * Needed for issue #38's purge cascade tests, which upload a real descendant File to prove
+     * the Folder purge cascade reaches {@code StorageBackend.delete} end-to-end through the REST
+     * layer - mirrors {@link FileControllerIntegrationTest}/{@link TrashControllerIntegrationTest}'s
+     * own {@code @TempDir}-backed {@code LocalStorageBackend} setup exactly.
+     */
+    @TempDir
+    static Path storageRoot;
+
+    @DynamicPropertySource
+    static void storageProperties(DynamicPropertyRegistry registry) {
+        registry.add("file-manager.storage.local.root-directory", () -> storageRoot.toString());
+    }
 
     @Autowired
     private TestRestTemplate restTemplate;
@@ -292,6 +319,104 @@ class FolderControllerIntegrationTest {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
         assertThat(response.getBody().getStatus()).isEqualTo(404);
+    }
+
+    @Test
+    void purgeEndpointDeletesATrashedFolderAndCascadesToDescendantFolderAndFileAndReturns204() {
+        String secret = seedApiKey(new TenantId(UUID.randomUUID()), false);
+        FolderResponse root = create(secret, "2026 Archive", null);
+        FolderResponse child = create(secret, "Q1", root.id());
+        FileResponse file = upload(secret, child.id(), "invoice.txt",
+                "invoice content".getBytes(StandardCharsets.UTF_8), "text/plain");
+        trashFolder(secret, root.id());
+
+        ResponseEntity<Void> purgeResponse = restTemplate.exchange(
+                "/api/v1/folders/" + root.id(),
+                HttpMethod.DELETE,
+                new HttpEntity<>(authHeaders(secret)),
+                Void.class);
+
+        assertThat(purgeResponse.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+
+        assertThat(fetchFolder(secret, root.id()).getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        assertThat(fetchFolder(secret, child.id()).getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        assertThat(fetchFile(secret, file.id()).getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    void purgingAFolderThatIsntTrashedReturns400() {
+        String secret = seedApiKey(new TenantId(UUID.randomUUID()), false);
+        FolderResponse folder = create(secret, "Invoices", null);
+
+        ResponseEntity<ProblemDetail> response = restTemplate.exchange(
+                "/api/v1/folders/" + folder.id(),
+                HttpMethod.DELETE,
+                new HttpEntity<>(authHeaders(secret)),
+                ProblemDetail.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    void purgingANonexistentFolderReturns404() {
+        String secret = seedApiKey(new TenantId(UUID.randomUUID()), false);
+
+        ResponseEntity<ProblemDetail> response = restTemplate.exchange(
+                "/api/v1/folders/" + UUID.randomUUID(),
+                HttpMethod.DELETE,
+                new HttpEntity<>(authHeaders(secret)),
+                ProblemDetail.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    private FileResponse upload(String secret, UUID folderId, String name, byte[] content, String contentType) {
+        MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+
+        HttpHeaders filePartHeaders = new HttpHeaders();
+        filePartHeaders.setContentType(MediaType.parseMediaType(contentType));
+        ByteArrayResource fileResource = new ByteArrayResource(content) {
+            @Override
+            public String getFilename() {
+                return name;
+            }
+        };
+        body.add("file", new HttpEntity<>(fileResource, filePartHeaders));
+
+        HttpHeaders metadataHeaders = new HttpHeaders();
+        metadataHeaders.setContentType(MediaType.APPLICATION_JSON);
+        body.add("metadata", new HttpEntity<>(new UploadFileMetadata(folderId, name, null), metadataHeaders));
+
+        HttpHeaders headers = authHeaders(secret);
+        headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+
+        ResponseEntity<FileResponse> response = restTemplate.exchange(
+                "/api/v1/files", HttpMethod.POST, new HttpEntity<>(body, headers), FileResponse.class);
+        return response.getBody();
+    }
+
+    private void trashFolder(String secret, UUID folderId) {
+        restTemplate.exchange(
+                "/api/v1/folders/" + folderId + "/trash",
+                HttpMethod.POST,
+                new HttpEntity<>(authHeaders(secret)),
+                FolderResponse.class);
+    }
+
+    private ResponseEntity<ProblemDetail> fetchFolder(String secret, UUID folderId) {
+        return restTemplate.exchange(
+                "/api/v1/folders/" + folderId,
+                HttpMethod.GET,
+                new HttpEntity<>(authHeaders(secret)),
+                ProblemDetail.class);
+    }
+
+    private ResponseEntity<ProblemDetail> fetchFile(String secret, UUID fileId) {
+        return restTemplate.exchange(
+                "/api/v1/files/" + fileId,
+                HttpMethod.GET,
+                new HttpEntity<>(authHeaders(secret)),
+                ProblemDetail.class);
     }
 
     private FolderResponse create(String secret, String name, UUID parentFolderId) {
