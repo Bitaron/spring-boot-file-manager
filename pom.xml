@@ -196,4 +196,22 @@
             </plugins>
         </pluginManagement>
     </build>
+
+    <!--
+        Local Nexus deploy target. Fill in the two URLs for your Nexus instance
+        (Nexus3 default layout: http://<host>:8081/repository/maven-releases/ and
+        .../maven-snapshots/). The <id> values must match a <server> entry with
+        credentials in ~/.m2/settings.xml - see docs/git-workflow.md or ask the
+        team for the settings.xml snippet.
+    -->
+    <distributionManagement>
+        <repository>
+            <id>nexus-releases</id>
+            <url>http://localhost:8081/repository/maven-releases/</url>
+        </repository>
+        <snapshotRepository>
+            <id>nexus-snapshots</id>
+            <url>http://localhost:8081/repository/maven-snapshots/</url>
+        </snapshotRepository>
+    </distributionManagement>
 </project>
